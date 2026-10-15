@@ -16,7 +16,6 @@ const post = (p, b) => call('POST', '/api/' + p, b);
 const state = (code, pid) => call('GET', `/api/state?code=${code}&pid=${pid}&v=0`).then((r) => r.j);
 const waitFor = async (fn, ms = 15000) => { const end = Date.now() + ms; for (;;) { const v = await fn(); if (v) return v; if (Date.now() > end) return null; await sleep(120); } };
 const TRACKS = ['4cOdK2wGLETKBW3PvgPWqT', '7ouMYWpwJ422jRcDASZB7P', '3AJwUDP919kvQ9QcozQPxg', '0VjIjW4GlUZAMYd2vXMi3b'];
-const trackUrl = (i) => `https://open.spotify.com/track/${TRACKS[i]}`;
 
 (async () => {
   if (!BASE) {
@@ -35,8 +34,8 @@ const trackUrl = (i) => `https://open.spotify.com/track/${TRACKS[i]}`;
   ok((await call('GET', '/?join=ABCD')).s === 200, 'invite link loads the app');
   const cfg = (await call('GET', '/api/config')).j;
   ok(Object.values(cfg.categories).every((c) => c.count >= 150), 'each word category has 150+ words');
-  ok(cfg.search === false, 'search disabled without server keys (paste-link fallback)');
-  ok((await call('GET', '/api/search?q=love')).s === 501, 'search endpoint reports not configured');
+  ok(cfg.search === false, 'search reports itself unavailable without server keys');
+  const ns = await call('GET', '/api/search?q=love'); ok(ns.s === 501 && /Render/.test(ns.j.error), 'search endpoint says how to enable it when keys are missing');
 
   console.log('Lobby');
   const h = (await post('create', { name: 'Host<b>' })).j; ok(/^[A-Z]{4}$/.test(h.code) && /^[a-f0-9]{16}$/.test(h.pid), 'host creates game');
@@ -96,10 +95,10 @@ const trackUrl = (i) => `https://open.spotify.com/track/${TRACKS[i]}`;
   ok(sg.every((x) => x.word === null && /^[_ \-]+$/.test(x.mask) && x.category), 'guessers get only a mask and category');
   ok(sg.every((x) => !JSON.stringify(x).toLowerCase().includes(word1.toLowerCase())), 'the word is absent from guessers\' payloads');
   ok((await post('guess', { code, pid: g[0], text: word1 })).s === 400, 'guessing before the first song is rejected');
-  ok((await post('song', { code, pid: g[0], url: trackUrl(0) })).s === 403, 'non-picker cannot add songs');
-  ok((await post('song', { code, pid: picker1, url: 'https://example.com/nope' })).s === 400, 'non-Spotify link rejected');
-  ok((await post('song', { code, pid: picker1, url: trackUrl(0) })).s === 200, 'picker adds song 1');
-  ok((await post('song', { code, pid: picker1, url: trackUrl(0) })).s === 400, 'duplicate song rejected');
+  ok((await post('song', { code, pid: g[0], trackId: TRACKS[0] })).s === 403, 'non-picker cannot add songs');
+  ok((await post('song', { code, pid: picker1, trackId: 'not-a-track' })).s === 400, 'only real Spotify track ids are accepted');
+  ok((await post('song', { code, pid: picker1, trackId: TRACKS[0] })).s === 200, 'picker adds song 1');
+  ok((await post('song', { code, pid: picker1, trackId: TRACKS[0] })).s === 400, 'duplicate song rejected');
   ok((await post('guess', { code, pid: picker1, text: 'hello' })).s === 400, 'picker cannot chat during guessing');
   s = await state(code, g[0]); ok(s.songs.length === 1 && s.scoreClockStart && s.songs[0].trackId === TRACKS[0], 'guessers see song 1 and the clock starts');
   await sleep(450);
@@ -118,12 +117,12 @@ const trackUrl = (i) => `https://open.spotify.com/track/${TRACKS[i]}`;
   await post('guess', { code, pid: g[0], text: `the answer is ${word1} lol` });
   ok(!(await state(code, g[1])).chat.some((m) => /the answer is/.test(m.text)), 'post-solve chat stays private from players still guessing');
   ok((await state(code, picker1)).chat.some((m) => /the answer is/.test(m.text)), 'the picker can read the guessed-players chat');
-  ok((await post('song', { code, pid: picker1, url: trackUrl(1) })).s === 200 && (await post('song', { code, pid: picker1, url: trackUrl(2) })).s === 200, 'picker adds songs 2 and 3');
+  ok((await post('song', { code, pid: picker1, trackId: TRACKS[1] })).s === 200 && (await post('song', { code, pid: picker1, trackId: TRACKS[2] })).s === 200, 'picker adds songs 2 and 3');
   ok((await post('playback', { code, pid: g[0], n: 1, playing: true, pos: 0 })).s === 403, 'only the picker can drive shared playback');
   ok((await post('playback', { code, pid: picker1, n: 9, playing: true, pos: 0 })).s === 400 && (await post('playback', { code, pid: picker1, n: 1, playing: true, pos: -5 })).s === 400, 'playback rejects unknown songs and bad positions');
   ok((await post('playback', { code, pid: picker1, n: 2, playing: true, pos: 4500 })).s === 200, 'picker publishes shared playback');
   const pb = (await state(code, g[1])).play; ok(pb && pb.n === 2 && pb.playing === true && pb.pos === 4500 && pb.at > 0, 'listeners receive the shared playback state');
-  ok((await post('song', { code, pid: picker1, url: trackUrl(3) })).s === 400, 'a fourth song is rejected');
+  ok((await post('song', { code, pid: picker1, trackId: TRACKS[3] })).s === 400, 'a fourth song is rejected');
   await sleep(450);
   const r2 = (await post('guess', { code, pid: g[1], text: word1 + 's' })).j; ok(r2.result === 'correct', 'plural accepted');
   ok(r2.points < r1.points, `later guess after more songs scores less (${r2.points} < ${r1.points})`);
@@ -151,7 +150,7 @@ const trackUrl = (i) => `https://open.spotify.com/track/${TRACKS[i]}`;
 
   console.log('Round 3: nobody guesses, time runs out');
   s = await waitFor(async () => { const x = await state(code, h.pid); return x.phase === 'choosing' && x.round === 3 && x; }, 10000);
-  const picker3 = s.pickerId; await post('choose', { code, pid: picker3, index: 0 }); await post('song', { code, pid: picker3, url: trackUrl(2) });
+  const picker3 = s.pickerId; await post('choose', { code, pid: picker3, index: 0 }); await post('song', { code, pid: picker3, trackId: TRACKS[2] });
   s = await waitFor(async () => { const x = await state(code, h.pid); return x.phase === 'roundend' && x; }, 15000);
   ok(s && s.result.reason === 'time', 'round ends when the timer runs out');
   ok(s.result.word && s.players.every((p) => p.score >= 0), 'answer revealed on timeout');
@@ -171,7 +170,7 @@ const trackUrl = (i) => `https://open.spotify.com/track/${TRACKS[i]}`;
   while (guard++ < 12) {
     s = await waitFor(async () => { const x = await state(code, hostNow); return (x.phase === 'gameover' || x.phase === 'choosing') && x; }, 12000);
     if (!s || s.phase === 'gameover') break;
-    await post('choose', { code, pid: s.pickerId, index: 0 }); await post('song', { code, pid: s.pickerId, url: trackUrl(guard % 4) });
+    await post('choose', { code, pid: s.pickerId, index: 0 }); await post('song', { code, pid: s.pickerId, trackId: TRACKS[guard % 4] });
     const w = (await state(code, s.pickerId)).word;
     for (const pl of s.players.filter((p) => p.id !== s.pickerId)) { await sleep(260); await post('guess', { code, pid: pl.id, text: w }); }
     await waitFor(async () => (await state(code, hostNow)).phase === 'roundend', 8000);

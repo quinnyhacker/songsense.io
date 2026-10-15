@@ -14,7 +14,7 @@ for (let i = 0; i < Number(n); i++) (async () => {
   setInterval(async () => {
     const s = await api(`state?code=${code}&pid=${me.pid}&v=0`); if (s.error) return;
     if (s.phase === 'choosing' && s.me.isPicker) { songs = 0; api('choose', { ...me, index: 0 }); }
-    if (s.phase === 'playing' && s.me.isPicker && songs === 0) { songs = 1; console.log('WORD', s.word); api('song', { ...me, url: 'https://open.spotify.com/track/' + TRACKS[Math.floor(Math.random() * 3)] }); }
+    if (s.phase === 'playing' && s.me.isPicker && songs === 0) { songs = 1; console.log('WORD', s.word); api('song', { ...me, trackId: TRACKS[Math.floor(Math.random() * 3)] }); }
     if (s.phase === 'playing' && !s.me.isPicker && !s.me.guessed && s.scoreClockStart && Math.random() < 0.08) api('guess', { ...me, text: ['hmm', 'is it fast?', 'no idea'][Math.floor(Math.random() * 3)] });
   }, 1000);
 })();

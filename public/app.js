@@ -22,8 +22,8 @@ const inviteCode = (new URLSearchParams(location.search).get('join') || '').toUp
 if (inviteCode.length === 4 && session && session.code !== inviteCode) { session = null; store.del('songsense.session'); }   // a new invite link wins over an old game
 
 let state = null, cfg = { search: false, categories: {}, secs: [60, 90, 120], maxCycles: 3, minPlayers: 2 }, clockOffset = 0;
-const ui = { listen: false, err: '', notice: '', name: store.get('songsense.name') || '', code: inviteCode, invite: inviteCode.length === 4 ? { code: inviteCode, status: 'checking' } : null,
-  sq: '', hits: null, searching: false, link: '', leaveArmed: false };
+const ui = { listen: true, err: '', notice: '', name: store.get('songsense.name') || '', code: inviteCode, invite: inviteCode.length === 4 ? { code: inviteCode, status: 'checking' } : null,
+  sq: '', hits: null, searching: false, leaveArmed: false };
 const last = {}; const locks = new Set(); let fails = 0, inRoom = false;
 
 async function api(path, body) {
@@ -41,7 +41,7 @@ const act = async (path, body, quiet) => {
 const save = (s) => { session = s; store.set('songsense.session', s); };
 function toast(msg) { const el = document.getElementById('toast'); if (!el) return; el.textContent = msg; el.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 2400); }
 function leave(notice) {
-  store.del('songsense.session'); session = null; state = null; inRoom = false; fails = 0; setNet(true); ui.hits = null; ui.sq = ''; ui.link = '';
+  store.del('songsense.session'); session = null; state = null; inRoom = false; fails = 0; setNet(true); ui.hits = null; ui.sq = '';
   Object.keys(last).forEach((k) => delete last[k]); document.body.dataset.phase = 'home'; ui.notice = notice || ''; ui.leaveArmed = false; history.replaceState(null, '', location.pathname); render();
 }
 function setNet(ok) { const el = document.getElementById('net'); if (el) el.classList.toggle('on', !ok); }
@@ -255,11 +255,9 @@ function pickerControls() {
   const q = ui.sq;
   const hits = ui.hits ? (ui.hits.length ? `<ul class="hits" aria-label="Search results">${ui.hits.map((h, i) => `<li class="hit">${h.thumb ? `<img src="${esc(h.thumb)}" alt="" loading="lazy">` : `<span class="art"></span>`}<span class="meta"><b>${esc(h.title)}</b><span>${esc(h.artist)}</span></span>
       <button class="btn sm primary" data-act="addhit" data-i="${i}" aria-label="Add ${esc(h.title)}">${icon('plus')}Add</button></li>`).join('')}</ul>` : '<p class="hint" style="margin-top:12px">No songs found. Try different words.</p>') : '';
-  const paste = cfg.search ? '' : `<details class="paste" open><summary>Paste a Spotify song link</summary><form data-form="link" class="field"><label class="sr" for="lk">Spotify song link</label><input id="lk" name="link" placeholder="https://open.spotify.com/track/&hellip;" value="${esc(ui.link)}" autocomplete="off"><button class="btn primary">Add</button></form>
-    <p class="hint" style="margin-top:8px">Song search isn't set up on this server (no Spotify keys), so links are accepted instead.</p></details>`;
   const searchForm = cfg.search ? `<form data-form="search" class="field"><label class="sr" for="sq">Search Spotify</label><input id="sq" name="q" placeholder="Search a song or artist" value="${esc(q)}" autocomplete="off" enterkeyhint="search"><button class="btn" ${ui.searching ? 'disabled' : ''}>${icon('search')}<span>${ui.searching ? 'Searching&hellip;' : 'Search'}</span></button></form>` : '';
   return `<div class="card"><p class="label">${n ? `Add another hint &middot; song ${n + 1} of 3` : 'Add your first song &middot; song 1 of 3'}</p><p class="hint" style="margin:4px 0 12px">${n ? 'Optional. Later songs are easier but worth fewer points to guessers.' : 'Choose a song that makes people feel your word. Everyone else will see it.'}</p>
-    ${searchForm}${hits}${paste}<p class="err" id="err" role="alert">${esc(ui.err)}</p></div>`;
+    ${searchForm || '<p class="banner warn">Song search isn\'t set up on this server yet. The host needs to add the Spotify keys in the server settings.</p>'}${hits}<p class="err" id="err" role="alert">${esc(ui.err)}</p></div>`;
 }
 function resultsHtml() {
   const r = state.result, gs = r.guessers;
@@ -466,10 +464,6 @@ document.addEventListener('submit', async (e) => {
     const q = val(f, 'q'); ui.sq = q; if (!q) return; ui.searching = true; render();
     try { ui.hits = await api('search?q=' + encodeURIComponent(q)); setErr(''); } catch (er) { setErr(er.message); ui.hits = null; }
     ui.searching = false; setSection('main', mainHtml(), 'force', true);
-  } else if (kind === 'link') {
-    const link = val(f, 'link'); ui.link = link; if (!link) return;
-    ui.link = ''; ui.hits = null; ui.sq = '';                      // clear first so the re-render after a successful add shows an empty box
-    if (!(await act('song', { url: link }))) { ui.link = link; setSection('main', mainHtml(), 'force', true); }
   }
 });
 document.addEventListener('click', async (e) => {

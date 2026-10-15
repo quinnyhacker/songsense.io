@@ -48,7 +48,7 @@ Environment variables (never commit values; set them in your shell or in Render'
 
 | Variable | Purpose |
 | --- | --- |
-| `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | Optional. Enables in-app song search (server-side client credentials). Without them, pickers paste a Spotify song link. |
+| `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | Required. Enables in-app song search (server-side client credentials). Required for adding songs: without them pickers cannot add any (the game shows a notice). |
 | `PORT` | Set by Render. |
 | `TRUST_PROXY` | `0` only if the app is not behind a proxy (default trusts `X-Forwarded-For` for rate limiting). |
 | `SPEED` | Test hook that shrinks all timers (e.g. `0.1`). Leave unset in production. |
@@ -80,7 +80,7 @@ You register the domain yourself (any registrar: Namecheap, Porkbun, Cloudflare,
 
 ## Shared listening
 
-Songs are added by **search** (paste-a-link only appears as a fallback when the server has no Spotify keys). The picker's Spotify player is the remote control: its play, pause and seek are reported to the server (`POST /api/playback`), and every player who clicks **Listen along** has their own Spotify player follow it (same position, adjusted for elapsed time, re-synced if it drifts more than 2.5 s). Listening along is opt-in per person, so each listener's playback starts from their own click.
+Songs are added by **Spotify search only** (there is no paste-a-link). Search needs `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` on the server; without them pickers see a message saying so. The picker's Spotify player is the remote control: its play, pause and seek are reported to the server (`POST /api/playback`), and every player who clicks **Listen along** has their own Spotify player follow it (same position, adjusted for elapsed time, re-synced if it drifts more than 2.5 s). Listening along is opt-in per person, so each listener's playback starts from their own click.
 
 * Each player runs inside `/player.html`, a tiny page framed by the game that hosts Spotify's official embed through Spotify's iFrame API. That API needs `unsafe-eval`, so `player.html` gets its own strict-as-possible CSP while the main app keeps `script-src 'self'`. The frame is same-origin (the Spotify embed cannot render in a fully sandboxed frame), so treat Spotify's script as trusted.
 * Limits you can't remove from our side: listeners who are not signed in to Spotify in their browser get 30-second previews, so a position past 30 s is silent for them; sync accuracy is about one second (state is polled every 0.6 s); browsers may block remote-started audio until the page has had a click, which is why "Listen along" is a button.

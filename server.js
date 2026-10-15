@@ -47,8 +47,7 @@ const clientIp = (req) => (TRUST_PROXY && String(req.headers['x-forwarded-for'] 
 function limit(name, req) { const r = limits[name](clientIp(req)); if (!r.ok) { const e = httpErr(429, `You're doing that a lot. Try again in ${r.retry}s.`); e.retry = r.retry; throw e; } }
 
 /* ---------- Spotify (search by server-side client credentials; playback only via official embeds) ---------- */
-const TRACK_RE = /(?:open\.spotify\.com\/(?:intl-[a-z]+\/)?track\/|spotify:track:)([A-Za-z0-9]{22})/;
-const parseTrackId = (s) => { const m = TRACK_RE.exec(String(s || '')); return m ? m[1] : null; };
+const TRACK_ID_RE = /^[A-Za-z0-9]{22}$/;        // songs are added only by Spotify track id, which the client gets from search results
 async function trackMeta(id) {
   try {
     const r = await fetch('https://open.spotify.com/oembed?url=' + encodeURIComponent('https://open.spotify.com/track/' + id), { signal: AbortSignal.timeout(5000) });
@@ -248,11 +247,10 @@ const routes = {
     if (room.phase !== 'playing') throw httpErr(400, 'You can add songs once you\'ve picked a word.');
     if (b.pid !== room.pickerId) throw httpErr(403, 'Only the picker adds songs.');
     if (room.songs.length >= MAX_SONGS) throw httpErr(400, 'You\'ve already used all three songs.');
-    if (HAS_SEARCH && b.url) throw httpErr(400, 'Search for a song to add it.');          // with search on, songs come from search results only
-    const id = parseTrackId(b.url || ('spotify:track:' + b.trackId));
-    if (!id) throw httpErr(400, 'That doesn\'t look like a Spotify song link. In Spotify choose ••• › Share › Copy Song Link.');
+    const id = String(b.trackId || '');
+    if (!TRACK_ID_RE.test(id)) throw httpErr(400, 'Pick a song from the search results.');
     if (room.songs.some((s) => s.trackId === id)) throw httpErr(400, 'You already added that song.');
-    const meta = await trackMeta(id); if (!meta) throw httpErr(400, 'Spotify couldn\'t find that song. Try a different link.');
+    const meta = await trackMeta(id); if (!meta) throw httpErr(400, 'Spotify couldn\'t find that song. Try a different one.');
     if (room.phase !== 'playing' || room.songs.length >= MAX_SONGS) throw httpErr(400, 'The round has moved on.');   // re-check after the await
     if (b.title) meta.title = cleanText(b.title, 120) || meta.title;
     room.songs.push({ trackId: id, ...meta, at: Date.now() });
@@ -329,9 +327,9 @@ async function handle(req) {
   if (key === 'GET /api/config') return { search: HAS_SEARCH, categories: words.meta(), secs: SECS_OPTIONS, maxCycles: MAX_CYCLES, maxPlayers: MAX_PLAYERS, minPlayers: MIN_PLAYERS };
   if (key === 'GET /api/search') {
     limit('search', req);
-    if (!HAS_SEARCH) throw httpErr(501, 'Song search isn\'t set up on this server. Paste a Spotify song link instead.');
+    if (!HAS_SEARCH) throw httpErr(501, 'Song search isn\'t set up on this server yet. The host needs to add the Spotify keys in Render.');
     const term = String(q.get('q') || '').slice(0, 100).trim(); if (!term) return [];
-    try { return await search(term); } catch { throw httpErr(502, 'Spotify search is unavailable right now. You can paste a song link instead.'); }
+    try { return await search(term); } catch (e) { console.error('[spotify search]', e.message); throw httpErr(502, 'Spotify search is unavailable right now. Try again in a moment.'); }
   }
   const fn = routes[key]; if (!fn) throw httpErr(404, 'Not found');
   let raw = '', size = 0;
@@ -390,5 +388,5 @@ setInterval(() => {
   }
 }, 250).unref();
 
-if (require.main === module) server.listen(PORT, () => console.log(`Song Sense running on http://localhost:${PORT}  (Spotify search: ${HAS_SEARCH ? 'on' : 'off - paste links'})`));
+if (require.main === module) server.listen(PORT, () => console.log(`Song Sense running on http://localhost:${PORT}  (Spotify search: ${HAS_SEARCH ? 'on' : 'OFF - set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET'})`));
 module.exports = { server, rooms };
