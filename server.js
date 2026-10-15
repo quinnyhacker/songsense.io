@@ -372,7 +372,7 @@ async function handle(req) {   // (req is also passed to every route so it can r
 }
 
 const PUBLIC = path.join(__dirname, 'public');
-const STATIC = { '/': ['index.html', 'text/html; charset=utf-8'], '/index.html': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/avatar.js': ['avatar.js', 'text/javascript; charset=utf-8'], '/shop-data.js': ['shop-data.js', 'text/javascript; charset=utf-8'], '/profile.js': ['profile.js', 'text/javascript; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
+const STATIC = { '/': ['index.html', 'text/html; charset=utf-8'], '/index.html': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/avatar.js': ['avatar.js', 'text/javascript; charset=utf-8'], '/shop-data.js': ['shop-data.js', 'text/javascript; charset=utf-8'], '/profile.js': ['profile.js', 'text/javascript; charset=utf-8'], '/cutscene.js': ['cutscene.js', 'text/javascript; charset=utf-8'], '/cutscene.css': ['cutscene.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');

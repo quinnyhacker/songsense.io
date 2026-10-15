@@ -4,6 +4,10 @@ A multiplayer word-guessing party game you play in the browser. One player is th
 
 No accounts, no database, no runtime dependencies (plain Node). Rooms live in server memory.
 
+## The welcome cutscene
+
+On a visitor's first visit the maker's Pokémon-style message continues into a short animated cutscene ("A Long-Distance Love Story"): two cities, a night shift, late-night coding, a video call, a game night and a finale. Skippable with a button, Escape or by tapping; replay it from "A note from the maker" on the home page. The words and Vivian's avatar are constants at the top of `public/cutscene.js` (`STORY`, `VIVIAN`). It is pure HTML/CSS/SVG with no audio, and honours reduced-motion settings.
+
 ## Look and avatars
 
 The interface is a bright "Aero" glass-window theme (design tokens and components live at the top of `public/index.html`). Every player builds a cartoon head-and-shoulders avatar in the built-in **Avatar Maker** (click your avatar on the home page or "Edit my avatar" in the lobby): hair style, bangs and color, eye shape and color, eyebrows, expression, blush, freckles, facial markings, skin tone, tops and colors, and accessories (headphones, earbuds, glasses, beanie, clips, bow, music note), with Randomize, Reset and Save. A first-time visitor gets a random avatar.

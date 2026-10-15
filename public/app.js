@@ -517,7 +517,7 @@ document.addEventListener('click', async (e) => {
 document.getElementById('privacy-close').addEventListener('click', () => document.getElementById('privacy').close());
 
 /* ---------- welcome message from the maker: a Pokemon-style dialogue box, shown once per browser ---------- */
-const INTRO_KEY = 'songsense.intro.v1';
+const INTRO_KEY = 'songsense.intro.v2';      // v2: the welcome message now continues into the cutscene, so everyone sees it once more
 const MAKER = { skin: 1, hair: 1, hairColor: 1, bangs: 2, eyes: 3, eyeColor: 4, brows: 0, expr: 2, blush: 1, freckles: 0, mark: 0, clothes: 1, clothesColor: 0, acc: 1, accColor: 9 };
 const INTRO_PAGES = [
   'Hi Vivian,',
@@ -534,7 +534,7 @@ function showIntro() {
   document.body.appendChild(el); document.body.style.overflow = 'hidden';
   const av = el.querySelector('.intro-av'), txt = el.querySelector('.dlg-text'), arrow = el.querySelector('.dlg-arrow'), btn = el.querySelector('.dlg');
   const hearts = el.querySelector('.hearts');
-  let page = 0, i = 0, timer = null, talk = null, done = false, kissT = null;
+  let page = 0, i = 0, timer = null, talk = null, done = false, kissT = null, cut = false;
   const face = (x) => { av.innerHTML = Avatar.svg(MAKER, { expr: x, label: 'The maker' }); };
   face(MAKER.expr);
   const stopTalk = () => { clearInterval(talk); talk = null; face(MAKER.expr); };
@@ -552,9 +552,9 @@ function showIntro() {
     timer = setInterval(() => { i++; txt.textContent = INTRO_PAGES[page].slice(0, i); if (i >= INTRO_PAGES[page].length) finishPage(); }, 32);
   }
   function close() { clearInterval(timer); clearInterval(talk); clearTimeout(kissT); store.set(INTRO_KEY, 1); el.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', onKey); if (!session) renderHome(); }
-  function advance() { if (!done) return finishPage(); if (page < INTRO_PAGES.length - 1) { page++; start(); } else close(); }
-  function onKey(e) { if (e.key === 'Escape') close(); else if (e.key === 'Enter' || e.key === ' ') { if (document.activeElement && document.activeElement.dataset.i === 'skip') return; e.preventDefault(); advance(); } }
-  el.addEventListener('click', (e) => { const t = e.target.closest('[data-i]'); if (t && t.dataset.i === 'skip') return close(); advance(); });
+  function advance() { if (cut) return; if (!done) return finishPage(); if (page < INTRO_PAGES.length - 1) { page++; start(); } else { cut = true; clearTimeout(kissT); hearts.innerHTML = ''; el.style.display = 'none'; playCutscene(close); } }   // after the last line: straight into the cutscene
+  function onKey(e) { if (cut) return; if (e.key === 'Escape') close(); else if (e.key === 'Enter' || e.key === ' ') { if (document.activeElement && document.activeElement.dataset.i === 'skip') return; e.preventDefault(); advance(); } }
+  el.addEventListener('click', (e) => { if (cut) return; const t = e.target.closest('[data-i]'); if (t && t.dataset.i === 'skip') return close(); advance(); });
   document.addEventListener('keydown', onKey);
   btn.focus(); start();
 }

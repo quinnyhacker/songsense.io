@@ -33,6 +33,7 @@ const TRACKS = ['4cOdK2wGLETKBW3PvgPWqT', '7ouMYWpwJ422jRcDASZB7P', '3AJwUDP919k
   const pl = await call('GET', '/player.html?id=7ouMYWpwJ422jRcDASZB7P'); ok(pl.s === 200 && /unsafe-eval/.test(pl.headers.get('content-security-policy')) && /frame-ancestors 'self'/.test(pl.headers.get('content-security-policy')), 'only the player frame is allowed eval, and only we may frame it');
   const js = await call('GET', '/app.js'); ok(js.s === 200 && !/client_secret|SPOTIFY_CLIENT_SECRET/i.test(js.text + idx.text), 'no secrets in browser files');
   ok((await call('GET', '/?join=ABCD')).s === 200, 'invite link loads the app');
+  ok((await call('GET', '/cutscene.js')).s === 200 && (await call('GET', '/cutscene.css')).s === 200 && (await call('GET', '/profile.js')).s === 200 && (await call('GET', '/shop-data.js')).s === 200, 'all front-end scripts and styles are served');
   const cfg = (await call('GET', '/api/config')).j;
   ok(Object.values(cfg.categories).every((c) => c.count >= 150), 'each word category has 150+ words');
   ok(cfg.search === false, 'search reports itself unavailable without server keys');
