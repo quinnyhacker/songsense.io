@@ -21,7 +21,7 @@
     freckles: ['None', 'Freckles'],
     mark: ['None', 'Whiskers', 'Star', 'Gem', 'Tear mark'],
     clothes: ['T-shirt', 'Hoodie', 'Collared', 'Sweater', 'Jacket', 'Scarf', 'Tuxedo', 'Sailor', 'Puffer vest', 'Scrubs', 'Lab coat', 'Knight armor', 'Shadow suit', 'Space suit', 'Wizard robe', 'Royal robe'],
-    acc: ['None', 'Headphones', 'Earbuds', 'Glasses', 'Beanie', 'Hair clips', 'Bow', 'Music note', 'Sunglasses', 'Cat ears', 'Baseball cap', 'Golden crown', 'Top hat', 'Halo', 'Bunny ears', 'Flower crown', 'Stethoscope', 'Knight helmet', 'Scrub cap', 'Shadow cowl', 'Wizard hat', 'Astronaut helmet', 'Viking helmet', 'Angel wings', 'Devil horns', 'Pirate hat', 'Cowboy hat', 'Santa hat', 'Sweatband', 'Eyepatch', 'Monocle', 'Heart glasses', 'Antlers', 'Tiara', 'Chef hat', 'Party hat', 'Laurel wreath'],
+    acc: ['None', 'Headphones', 'Earbuds', 'Glasses', 'Beanie', 'Hair clips', 'Bow', 'Music note', 'Sunglasses', 'Cat ears', 'Baseball cap', 'Golden crown', 'Top hat', 'Halo', 'Bunny ears', 'Flower crown', 'Stethoscope', 'Knight helmet', 'Scrub cap', 'Shadow cowl', 'Wizard hat', 'Astronaut helmet', 'Viking helmet', 'Angel wings', 'Devil horns', 'Pirate hat', 'Cowboy hat', 'Santa hat', 'Sweatband', 'Eyepatch', 'Monocle', 'Heart glasses', 'Antlers', 'Tiara', 'Chef hat', 'Party hat', 'Laurel wreath', 'Blindfold'],
     pet: ['None', 'Kitten', 'Puppy', 'Duckling', 'Bunny', 'Shih tzu', 'Penguin', 'Panda', 'Fox', 'Owl', 'Axolotl', 'Ghost', 'Robot', 'Baby dragon', 'Unicorn foal'],
   };
   const EXPR = { happy: 0, neutral: 1, excited: 2, confused: 3, sad: 4, angry: 5, smug: 6 };
@@ -219,6 +219,8 @@
       case 34: return P('M30 26 C16 24 17 5 32 8 C34 -1 66 -1 68 8 C83 5 84 24 70 26Z', '#fff') + P('M30 24 H70 V33 H30Z', '#f1f4fa');   // chef hat
       case 35: return P('M38 29 L58 3 L74 27Z', col) + L('M43 23 L66 19 M48 16 L62 13', 2, '#fff', 'opacity=".8"') + '<circle cx="58" cy="3.4" r="3.2" fill="#ffd54a" stroke="' + INK + '" stroke-width="1"/>' + L('M36 29 Q56 33 76 28', 1.6, dk);   // party hat
       case 36: return L('M27 42 C19 26 30 12 46 9', 2.6, '#4fae6b') + L('M73 42 C81 26 70 12 54 9', 2.6, '#4fae6b') + [[24, 34], [26, 26], [31, 18], [39, 12], [76, 34], [74, 26], [69, 18], [61, 12]].map((c, k) => '<ellipse cx="' + c[0] + '" cy="' + c[1] + '" rx="3.6" ry="1.9" transform="rotate(' + (k < 4 ? 55 - k * 20 : -55 + (k - 4) * 20) + ' ' + c[0] + ' ' + c[1] + ')" fill="#6fcf7f" stroke="' + INK + '" stroke-width=".8"/>').join('') + '<circle cx="50" cy="9" r="2.4" fill="#f5c542" stroke="' + INK + '" stroke-width=".9"/>';   // laurel wreath
+      case 37: return P('M21 38 Q50 31 79 38 L79 56 Q50 63 21 56Z', col) + L('M24 42 Q50 36 76 42 M24 52 Q50 58 76 52', 1.2, shade(col, 0.28), 'opacity=".7"') + L('M26 47 Q50 49 74 47', 1, shade(col, -0.3), 'opacity=".5"')
+        + P('M79 47 L90 40 Q93 47 90 54Z', col) + P('M79 47 L88 58 Q84 61 80 57Z', dk) + '<circle cx="79.5" cy="47" r="2.6" fill="' + dk + '" stroke="' + INK + '" stroke-width="1.2"/>';   // blindfold (covers the eyes), knotted at the side
       default: return '';
     }
   }

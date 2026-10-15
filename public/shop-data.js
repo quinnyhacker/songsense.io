@@ -28,7 +28,7 @@
   av('hair', 13, 'hair', 'Curly bob', 550); av('hair', 11, 'hair', 'Afro', 600); av('hair', 14, 'hair', 'Braids', 650); av('hair', 12, 'hair', 'Mohawk', 700); av('hair', 15, 'hair', 'Space buns', 800);
   av('acc', 28, 'hats', 'Sweatband', 300); av('acc', 35, 'hats', 'Party hat', 400); av('acc', 27, 'hats', 'Santa hat', 900); av('acc', 34, 'hats', 'Chef hat', 1000); av('acc', 32, 'hats', 'Reindeer antlers', 1600);
   av('acc', 26, 'hats', 'Cowboy hat', 1700); av('acc', 25, 'hats', 'Pirate hat', 1900); av('acc', 33, 'hats', 'Tiara', 2600); av('acc', 36, 'hats', 'Laurel wreath', 3000);
-  av('acc', 29, 'gear', 'Eyepatch', 700); av('acc', 31, 'gear', 'Heart glasses', 800); av('acc', 30, 'gear', 'Monocle', 1300);
+  av('acc', 37, 'gear', 'Blindfold', 500); av('acc', 29, 'gear', 'Eyepatch', 700); av('acc', 31, 'gear', 'Heart glasses', 800); av('acc', 30, 'gear', 'Monocle', 1300);
   [['Duckling', 3, 600], ['Kitten', 1, 800], ['Puppy', 2, 800], ['Bunny', 4, 1000], ['Shih tzu', 5, 1500], ['Penguin', 6, 1800], ['Panda', 7, 2200], ['Fox', 8, 2400], ['Owl', 9, 2600],
     ['Axolotl', 10, 2800], ['Ghost', 11, 3000], ['Robot buddy', 12, 3500], ['Baby dragon', 13, 5000], ['Unicorn foal', 14, 7000]].forEach(([n, v, p]) => av('pet', v, 'pets', n, p));
   /* legendary costumes and gear */
