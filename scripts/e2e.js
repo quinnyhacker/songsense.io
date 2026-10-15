@@ -29,7 +29,7 @@ const trackUrl = (i) => `https://open.spotify.com/track/${TRACKS[i]}`;
   const idx = await call('GET', '/');
   ok(idx.s === 200 && /Song Sense/.test(idx.text), 'home page served');
   const csp = idx.headers.get('content-security-policy') || '';
-  ok(/frame-src 'self' https://open.spotify.com/.test(csp) && /script-src 'self';/.test(csp) && !/unsafe-eval/.test(csp), 'main page CSP: scripts from self only, no eval, frames limited to Spotify and our player');
+  ok(csp.includes("frame-src 'self' https://open.spotify.com") && csp.includes("script-src 'self';") && !csp.includes('unsafe-eval'), 'main page CSP: scripts from self only, no eval, frames limited to Spotify and our player');
   const pl = await call('GET', '/player.html?id=7ouMYWpwJ422jRcDASZB7P'); ok(pl.s === 200 && /unsafe-eval/.test(pl.headers.get('content-security-policy')) && /frame-ancestors 'self'/.test(pl.headers.get('content-security-policy')), 'only the player frame is allowed eval, and only we may frame it');
   const js = await call('GET', '/app.js'); ok(js.s === 200 && !/client_secret|SPOTIFY_CLIENT_SECRET/i.test(js.text + idx.text), 'no secrets in browser files');
   ok((await call('GET', '/?join=ABCD')).s === 200, 'invite link loads the app');
