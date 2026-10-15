@@ -94,7 +94,7 @@ function avatar(p, sz = 40, opts = {}) {
   const ring = opts.plain ? '' : p.guessed ? 'ok' : p.isPicker ? 'pick' : '';
   const badge = opts.badge || (opts.plain ? '' : p.isHost ? `<span class="badge" title="Host">${icon('star')}</span>` : p.guessed ? `<span class="badge good">${icon('check')}</span>` : '');
   const fl = p.flair || {}, fr = flairKey(fl.frame), cheer = p.react && p.react.k === 'excited' && nowMs() - p.react.at < 4500;
-  return `<span class="av ${ring} ${p.online === false ? 'off' : ''}" ${fr ? `data-frame="${fr}"` : ''} style="--sz:${sz}px" aria-hidden="true">${avSvg(cfgOf(p), exprFor(p))}${badge}${cheer && fl.fx ? fxHtml(flairKey(fl.fx)) : ''}</span>`;
+  return `<span class="av ${ring} ${p.online === false ? 'off' : ''}" ${fr ? `data-frame="${fr}"` : ''} style="--sz:${sz}px" aria-hidden="true">${avSvg(cfgOf(p), exprFor(p))}${cfgOf(p).pet ? `<span class="pet" aria-hidden="true">${Avatar.petSvg(cfgOf(p).pet)}</span>` : ''}${badge}${cheer && fl.fx ? fxHtml(flairKey(fl.fx)) : ''}</span>`;
 }
 const nowMs = () => Date.now() + clockOffset;
 const mmss = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -403,12 +403,12 @@ function updateChatForm() {
 
 /* ---------- avatar maker ---------- */
 const cr = { cfg: null, tab: 'hair', prev: null, focus: '', opener: null };
-const CR_TABS = [['hair', 'Hair'], ['face', 'Face'], ['skin', 'Skin'], ['clothes', 'Clothes'], ['acc', 'Accessories']];
+const CR_TABS = [['hair', 'Hair'], ['face', 'Face'], ['skin', 'Skin'], ['clothes', 'Clothes'], ['acc', 'Accessories'], ['pet', 'Pets']];
 const LOCK = '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" fill="currentColor"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
 const lockOf = (field, i) => { const it = Shop.BY_ID[Shop.itemId(field, i)]; return it && !ownedSet().has(it.id) ? it : null; };
 const optGrid = (field, label) => `<h4>${label}</h4><div class="ogrid" role="group" aria-label="${label}">${Array.from({ length: Avatar.SCHEMA[field] }, (_, i) => {
   const nm = Avatar.NAMES[field][i], lk = lockOf(field, i);
-  return `<button type="button" class="oth ${lk ? 'locked' : ''}" data-cr="${field}" data-i="${i}" data-k="${field}${i}" aria-pressed="${cr.cfg[field] === i}" aria-label="${label}: ${nm}${lk ? `, locked, ${lk.price} coins` : ''}">${Avatar.svg({ ...cr.cfg, [field]: i })}<small>${nm}</small>${lk ? `<span class="lk">${LOCK}${lk.price}</span>` : ''}</button>`; }).join('')}</div>`;
+  return `<button type="button" class="oth ${lk ? 'locked' : ''}" data-cr="${field}" data-i="${i}" data-k="${field}${i}" aria-pressed="${cr.cfg[field] === i}" aria-label="${label}: ${nm}${lk ? `, locked, ${lk.price} coins` : ''}">${field === 'pet' ? `<span class="petthumb">${i ? Avatar.petSvg(i) : ''}</span>` : Avatar.svg({ ...cr.cfg, [field]: i })}<small>${nm}</small>${lk ? `<span class="lk">${LOCK}${lk.price}</span>` : ''}</button>`; }).join('')}</div>`;
 const swatches = (field, colors, label) => `<h4>${label}</h4><div class="swatches" role="group" aria-label="${label}">${colors.map((c, i) => { const lk = lockOf(field, i); return `<button type="button" class="sw ${lk ? 'locked' : ''}" style="background:${c}" data-cr="${field}" data-i="${i}" data-k="${field}${i}" aria-pressed="${cr.cfg[field] === i}" aria-label="${label} ${i + 1}${lk ? `, locked, ${lk.price} coins` : ''}" ${lk ? `title="${lk.price} coins"` : ''}>${lk ? LOCK : ''}</button>`; }).join('')}</div>`;
 function crPane() {
   switch (cr.tab) {
@@ -416,6 +416,7 @@ function crPane() {
     case 'face': return optGrid('eyes', 'Eye shape') + swatches('eyeColor', Avatar.EYE_COLORS, 'Eye color') + optGrid('brows', 'Eyebrows') + optGrid('expr', 'Expression') + optGrid('blush', 'Blush') + optGrid('freckles', 'Freckles') + optGrid('mark', 'Facial marking');
     case 'skin': return swatches('skin', Avatar.SKIN, 'Skin tone');
     case 'clothes': return optGrid('clothes', 'Top') + swatches('clothesColor', Avatar.CLOTH_COLORS, 'Color');
+    case 'pet': return optGrid('pet', 'Companion (sits next to your avatar)');
     default: return optGrid('acc', 'Accessory') + swatches('accColor', Avatar.CLOTH_COLORS, 'Accessory color');
   }
 }
@@ -423,7 +424,7 @@ function renderCreator() {
   const need = Shop.lockedIn(cr.cfg, ownedSet());
   const el = document.getElementById('creator'), old = el.querySelector('.pane'), top = old ? old.scrollTop : 0, ex = cr.prev === null ? cr.cfg.expr : cr.prev;
   el.innerHTML = `<div class="win cw" role="dialog" aria-modal="true" aria-labelledby="cwt"><div class="tb"><span class="ttl" id="cwt">Avatar Maker</span><span class="ctl"><span aria-hidden="true">${ctlSvg('min')}</span><span aria-hidden="true">${ctlSvg('max')}</span><button type="button" class="close" data-ca="close" aria-label="Close avatar maker">${ctlSvg('x')}</button></span></div>
-    <div class="win-body"><div class="cw-grid"><div class="cw-prev"><div class="frame"><div class="scene">${Avatar.svg(cr.cfg, { expr: ex })}</div></div>
+    <div class="win-body"><div class="cw-grid"><div class="cw-prev"><div class="frame"><div class="scene">${Avatar.svg(cr.cfg, { expr: ex })}</div>${cr.cfg.pet ? `<span class="pet">${Avatar.petSvg(cr.cfg.pet)}</span>` : ''}</div>
       <div><p class="label" style="text-align:center;margin-bottom:6px">Preview a mood</p><div class="ex-row">${Avatar.NAMES.expr.map((n, i) => `<button type="button" class="btn" data-ca="prev" data-i="${i}" data-k="p${i}" aria-pressed="${cr.prev === i}">${n}</button>`).join('')}</div></div></div>
       <div class="cw-opts"><div class="tabs" role="tablist">${CR_TABS.map(([k, l]) => `<button type="button" class="tab" role="tab" data-ca="tab" data-i="${k}" data-k="t${k}" aria-selected="${cr.tab === k}">${l}</button>`).join('')}</div><div class="pane" role="tabpanel">${crPane()}</div></div></div>
     <div class="cw-foot"><button type="button" class="btn" data-ca="random">Randomize</button><button type="button" class="btn" data-ca="reset">Reset</button><span class="sp cw-note">${need.length ? `Trying on ${need.length} item${need.length === 1 ? '' : 's'} you don't own: ${need.slice(0, 3).map((i) => esc(Shop.BY_ID[i].name)).join(', ')}${need.length > 3 ? '&hellip;' : ''}. ${auth.user ? '<button type="button" class="linkbtn" data-ca="shop">Visit the shop</button>' : '<button type="button" class="linkbtn" data-ca="signin">Sign in to buy</button>'}` : ''}</span><button type="button" class="btn" data-ca="close">Cancel</button><button type="button" class="btn go" data-ca="save" ${need.length ? 'disabled' : ''}>Save Avatar</button></div></div></div>`;

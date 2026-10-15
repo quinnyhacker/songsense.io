@@ -49,6 +49,11 @@ eq(bad, 0, 'all 7 expressions render for random avatars');
 eq(/undefined|NaN/.test(Avatar.svg(Avatar.random(), { expr: 'kiss' })), false, 'the blow-a-kiss pose renders clean');
 eq(Avatar.svg(Avatar.DEFAULT, { expr: 'kiss' }) !== Avatar.svg(Avatar.DEFAULT, { expr: 'happy' }), true, 'kiss pose differs from the happy pose');
 eq(Avatar.svg({ ...Avatar.DEFAULT }, { label: '<script>' }).includes('<script>'), false, 'labels are sanitised');
+let badPet = 0; for (let i = 1; i < Avatar.SCHEMA.pet; i++) { const s = Avatar.petSvg(i); if (!s.startsWith('<svg') || /undefined|NaN/.test(s)) badPet++; }
+eq(badPet, 0, 'every companion pet renders clean SVG');
+const oldLook = { ...Avatar.DEFAULT }; delete oldLook.pet;
+eq(Avatar.valid(oldLook) && Avatar.normalize(oldLook).pet === 0, true, 'avatars saved before pets existed are still valid');
+eq(Avatar.valid({ ...Avatar.DEFAULT, pet: 99 }), false, 'an out-of-range pet is rejected');
 console.log('Words');
 for (const [k, v] of Object.entries(words.CATEGORIES)) eq(v.length >= 150, true, `${k} has ${v.length} words`);
 eq(Object.values(words.CATEGORIES).flat().every((w) => w.word.length >= 3 && w.word.length <= 30), true, 'word lengths are sane');

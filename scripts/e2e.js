@@ -207,6 +207,7 @@ const TRACKS = ['4cOdK2wGLETKBW3PvgPWqT', '7ouMYWpwJ422jRcDASZB7P', '3AJwUDP919k
   ok((await B1('POST', '/api/profile/avatar', { avatar: { ...Avatar.DEFAULT, [cheap.field]: cheap.value } })).s === 200, 'an owned item can be worn');
   ok((await B1('POST', '/api/profile/equip', { slot: 'frame', id: 'frame:gold' })).s === 403, 'cannot equip flair you do not own');
   ok((await B1('POST', '/api/profile/equip', { slot: 'title', id: 'frame:gold' })).s === 400, 'flair must fit its slot');
+  ok((await B1('POST', '/api/profile/avatar', { avatar: { ...Avatar.DEFAULT, pet: 5 } })).s === 400, 'cannot wear a pet you do not own');
   const gu = (await post('create', { name: 'Guesty', avatar: { ...Avatar.DEFAULT, acc: 11 } })).j;
   ok((await state(gu.code, gu.pid)).players[0].avatar === null, 'a guest cannot appear wearing a paid item');
   ok((await post('avatar', { code: gu.code, pid: gu.pid, avatar: { ...Avatar.DEFAULT, acc: 11 } })).s === 400, 'guests cannot switch to a paid item in a room either');

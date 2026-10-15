@@ -124,6 +124,7 @@ function openShop() {
   ui.ovKind = 'shop'; ui.shopTab = ui.shopTab || 'legendary'; ui.shopSay = pick(SHOP_LINES.hi); ui.confirm = null; renderShop();
 }
 function previewFor(it, base) {
+  if (it.kind === 'avatar' && it.field === 'pet') return `<div class="oth-prev"><span class="petbig">${Avatar.petSvg(it.value)}</span></div>`;
   if (it.kind === 'avatar') return `<div class="oth-prev">${avSvg({ ...base, [it.field]: it.value }, base.expr)}</div>`;
   if (it.kind === 'frame') return `<div class="oth-prev"><span class="av" data-frame="${flairKey(it.id)}" style="--sz:56px;margin:8px auto">${avSvg(base, base.expr)}</span></div>`;
   if (it.kind === 'name') return `<div class="oth-prev txt"><b class="nc-${flairKey(it.id)}">${esc(auth.user ? auth.user.username : 'Player')}</b></div>`;
