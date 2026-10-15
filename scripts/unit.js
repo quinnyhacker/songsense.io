@@ -46,6 +46,8 @@ for (const k of Object.keys(Avatar.SCHEMA)) for (let i = 0; i < Avatar.SCHEMA[k]
 eq(bad, 0, 'every option of every layer renders clean SVG');
 bad = 0; for (let e = 0; e < 7; e++) { const s = Avatar.svg(Avatar.random(), { expr: e }); if (/undefined|NaN/.test(s)) bad++; }
 eq(bad, 0, 'all 7 expressions render for random avatars');
+eq(/undefined|NaN/.test(Avatar.svg(Avatar.random(), { expr: 'kiss' })), false, 'the blow-a-kiss pose renders clean');
+eq(Avatar.svg(Avatar.DEFAULT, { expr: 'kiss' }) !== Avatar.svg(Avatar.DEFAULT, { expr: 'happy' }), true, 'kiss pose differs from the happy pose');
 eq(Avatar.svg({ ...Avatar.DEFAULT }, { label: '<script>' }).includes('<script>'), false, 'labels are sanitised');
 console.log('Words');
 for (const [k, v] of Object.entries(words.CATEGORIES)) eq(v.length >= 150, true, `${k} has ${v.length} words`);

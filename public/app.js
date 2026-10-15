@@ -511,22 +511,29 @@ function showIntro() {
   if (document.getElementById('intro')) return;
   const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const el = document.createElement('div'); el.id = 'intro'; el.className = 'intro'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'A message from the maker: ' + INTRO_PAGES.join(' '));
-  el.innerHTML = `<button type="button" class="intro-skip" data-i="skip">Skip</button><div class="intro-stage"><div class="intro-av" aria-hidden="true"></div>
+  el.innerHTML = `<button type="button" class="intro-skip" data-i="skip">Skip</button><div class="intro-stage"><div class="intro-avwrap" aria-hidden="true"><div class="intro-av"></div><div class="hearts"></div></div>
     <button type="button" class="dlg" data-i="next" aria-label="Next"><span class="dlg-text" aria-hidden="true"></span><span class="dlg-arrow" aria-hidden="true">&#9660;</span></button></div>`;
   document.body.appendChild(el); document.body.style.overflow = 'hidden';
   const av = el.querySelector('.intro-av'), txt = el.querySelector('.dlg-text'), arrow = el.querySelector('.dlg-arrow'), btn = el.querySelector('.dlg');
-  let page = 0, i = 0, timer = null, talk = null, done = false;
+  const hearts = el.querySelector('.hearts');
+  let page = 0, i = 0, timer = null, talk = null, done = false, kissT = null;
   const face = (x) => { av.innerHTML = Avatar.svg(MAKER, { expr: x, label: 'The maker' }); };
   face(MAKER.expr);
   const stopTalk = () => { clearInterval(talk); talk = null; face(MAKER.expr); };
-  function finishPage() { clearInterval(timer); txt.textContent = INTRO_PAGES[page]; done = true; stopTalk(); arrow.classList.add('on'); }
+  const HEART = '<svg viewBox="0 0 24 24" width="100%" height="100%"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 2.7 4.5 6.4 4.5c2.2 0 3.7 1.2 5.6 3.3 1.9-2.1 3.4-3.3 5.6-3.3 3.7 0 5.5 3.9 4 7.3C19.5 16.4 12 21 12 21z" fill="#ff6f91" stroke="#c43a5c" stroke-width="1.2" stroke-linejoin="round"/><path d="M7 7.5c.8-.9 1.9-1 2.6-.4" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity=".8"/></svg>';
+  function blowKiss() {                                          // last page: wink, pucker, and send hearts toward the player
+    face('kiss');
+    if (!reduce) for (let k = 0; k < 4; k++) { const h = document.createElement('span'); h.className = 'heart'; h.innerHTML = HEART; h.style.animationDelay = (k * 0.28) + 's'; h.style.setProperty('--dx', (k % 2 ? -1 : 1) * (18 + k * 10) + 'px'); h.style.setProperty('--sz', (30 + k * 8) + 'px'); hearts.appendChild(h); }
+    kissT = setTimeout(() => { hearts.innerHTML = ''; face(MAKER.expr); }, 2200);
+  }
+  function finishPage() { clearInterval(timer); txt.textContent = INTRO_PAGES[page]; done = true; stopTalk(); arrow.classList.add('on'); if (page === INTRO_PAGES.length - 1) blowKiss(); }
   function start() {
     done = false; i = 0; txt.textContent = ''; arrow.classList.remove('on');
     if (reduce) return finishPage();
     let flip = false; talk = setInterval(() => { flip = !flip; face(flip ? Avatar.EXPR.happy : Avatar.EXPR.excited); }, 140);
     timer = setInterval(() => { i++; txt.textContent = INTRO_PAGES[page].slice(0, i); if (i >= INTRO_PAGES[page].length) finishPage(); }, 32);
   }
-  function close() { clearInterval(timer); clearInterval(talk); store.set(INTRO_KEY, 1); el.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', onKey); if (!session) renderHome(); }
+  function close() { clearInterval(timer); clearInterval(talk); clearTimeout(kissT); store.set(INTRO_KEY, 1); el.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', onKey); if (!session) renderHome(); }
   function advance() { if (!done) return finishPage(); if (page < INTRO_PAGES.length - 1) { page++; start(); } else close(); }
   function onKey(e) { if (e.key === 'Escape') close(); else if (e.key === 'Enter' || e.key === ' ') { if (document.activeElement && document.activeElement.dataset.i === 'skip') return; e.preventDefault(); advance(); } }
   el.addEventListener('click', (e) => { const t = e.target.closest('[data-i]'); if (t && t.dataset.i === 'skip') return close(); advance(); });

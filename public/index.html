@@ -220,9 +220,12 @@
   .ex-row { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; } .ex-row .btn { padding:0 8px; height:28px; font-size:var(--t-xs); } .ex-row .btn[aria-pressed=true] { background:linear-gradient(180deg,#6aaee6,#4a9ad8 50%,#3b8bd0 52%,#5fa6e0); color:#fff; box-shadow:inset 0 2px 5px rgba(20,50,90,.45); }
 
   /* ---------- welcome message (Pokemon-style dialogue) ---------- */
-  .intro { position:fixed; inset:0; z-index:100; display:grid; place-items:center; padding:var(--s4); background:radial-gradient(90% 70% at 50% 20%,rgba(233,246,255,.92),rgba(112,184,240,.9) 70%), rgba(58,141,204,.9); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); animation:rise .4s var(--ease) both; }
+  .intro { position:fixed; inset:0; z-index:100; display:grid; place-items:center; padding:var(--s4); background:radial-gradient(90% 70% at 50% 20%,rgba(233,246,255,.99),rgba(112,184,240,.98) 70%), #5aa6e0; -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); animation:rise .4s var(--ease) both; }
   .intro-stage { width:min(640px,100%); display:flex; flex-direction:column; align-items:center; gap:var(--s3); }
   .intro-av { width:clamp(150px,34vh,230px); aspect-ratio:1; border-radius:50%; background:radial-gradient(circle at 35% 25%,#fff,#d6ebfb 55%,#aad3f3); border:4px solid #fff; box-shadow:0 0 0 2px var(--win-border), 0 0 30px rgba(255,255,255,.9), var(--shadow); overflow:hidden; animation:bob 2.4s ease-in-out infinite; }
+  .intro-avwrap { position:relative; } .hearts { position:absolute; left:50%; top:30%; width:0; height:0; pointer-events:none; }
+  .heart { position:absolute; left:0; top:0; width:var(--sz,36px); height:var(--sz,36px); margin:-18px 0 0 -18px; opacity:0; animation:kissfly 1.7s ease-out forwards; filter:drop-shadow(0 2px 3px rgba(150,30,70,.45)); }
+  @keyframes kissfly { 0% { opacity:0; transform:translate(0,0) scale(.3) rotate(-10deg); } 15% { opacity:1; } 100% { opacity:0; transform:translate(var(--dx,20px),-150px) scale(1.15) rotate(14deg); } }
   .intro-av .avatar-svg { width:100%; height:100%; display:block; } @keyframes bob { 50% { transform:translateY(-6px); } }
   .dlg { position:relative; width:100%; min-height:7.2em; padding:18px 44px 18px 20px; text-align:left; cursor:pointer; color:#1c1c24; background:#fff; border:4px solid #3b3f5c; border-radius:12px; box-shadow:inset 0 0 0 3px #fff, inset 0 0 0 5px #b8bfd8, 0 6px 0 rgba(32,60,97,.35), var(--shadow);
     font:700 clamp(17px,4.4vw,22px)/1.55 "Courier New",Consolas,ui-monospace,monospace; letter-spacing:.01em; }

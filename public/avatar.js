@@ -119,7 +119,7 @@
     () => L('M44 60.5 Q51 64 58.5 56.5', 2),                                                        // smug
   ];
 
-  function face(cfg, ex, skin) {
+  function face(cfg, ex, skin, kiss) {
     const iris = EYE_COLORS[cfg.eyeColor];
     let s = '';
     if (cfg.blush) s += `<ellipse cx="31.5" cy="56" rx="5.5" ry="3.2" fill="#ff7f9f" opacity="${cfg.blush === 2 ? 0.6 : 0.32}"/><ellipse cx="68.5" cy="56" rx="5.5" ry="3.2" fill="#ff7f9f" opacity="${cfg.blush === 2 ? 0.6 : 0.32}"/>`;
@@ -129,6 +129,13 @@
     if (cfg.mark === 3) s += '<path d="M50 24.5 l3 3.5 -3 4 -3 -4z" fill="#7fe3ff" stroke="#2a8fb8" stroke-width=".9"/>';
     if (cfg.mark === 4) s += L('M31 50.5 L31 54.5 M69 50.5 L69 54.5', 1.4, '#3a8dcc');
     s += '<path d="M49 53 Q50 54.6 51.4 53" fill="none" stroke="' + shade(skin, -0.45) + '" stroke-width="1.1" stroke-linecap="round"/>';
+    if (kiss) {                                                   // blow-a-kiss pose: one eye open, one winking, lips puckered, extra blush
+      s += `<ellipse cx="31.5" cy="56" rx="5.5" ry="3.2" fill="#ff7f9f" opacity=".55"/><ellipse cx="68.5" cy="56" rx="5.5" ry="3.2" fill="#ff7f9f" opacity=".55"/>`;
+      s += eye(38, cfg.eyes, iris, 1, -1) + eye(62, cfg.eyes, iris, 0, 1);
+      s += brow(38, cfg.brows, 1, -1) + brow(62, cfg.brows, 2, 1);
+      s += '<ellipse cx="50" cy="62" rx="3.2" ry="3.9" fill="#d0506a" stroke="' + INK + '" stroke-width="1.6"/><ellipse cx="49" cy="60.8" rx="1" ry="1.2" fill="#fff" opacity=".7"/>';
+      return s;
+    }
     s += (eye(38, cfg.eyes, iris, ex, -1) + eye(62, cfg.eyes, iris, ex, 1)).replace(/SKINFILL/g, skin);
     s += brow(38, cfg.brows, ex, -1) + brow(62, cfg.brows, ex, 1) + MOUTH[ex]();
     return s;
@@ -151,7 +158,7 @@
 
   // expr (optional) overrides the saved expression so the game can react (excited / confused / sad ...)
   function svg(config, opts) {
-    opts = opts || {}; const cfg = normalize(config), ex = opts.expr === undefined ? cfg.expr : clamp(typeof opts.expr === 'string' ? EXPR[opts.expr] : opts.expr, 7);
+    opts = opts || {}; const cfg = normalize(config), kiss = opts.expr === 'kiss', ex = kiss ? 0 : opts.expr === undefined ? cfg.expr : clamp(typeof opts.expr === 'string' ? EXPR[opts.expr] : opts.expr, 7);
     const skin = SKIN[cfg.skin], sk2 = shade(skin, -0.18), hair = HAIR_COLORS[cfg.hairColor], hi = shade(hair, 0.28), cc = CLOTH_COLORS[cfg.clothesColor], ac = CLOTH_COLORS[cfg.accColor];
     const hairP = (d) => P(d, hair), frontShine = L('M30 24 C34 18 42 15 50 15', 2.2, hi, 'opacity=".7"');
     let out = `<svg class="avatar-svg" viewBox="0 0 100 100" role="img" aria-label="${opts.label ? String(opts.label).replace(/[<>&"]/g, '') : 'Avatar'}" xmlns="http://www.w3.org/2000/svg">`;
@@ -160,7 +167,7 @@
     out += `<ellipse cx="23.5" cy="47" rx="3.6" ry="5" fill="${skin}" stroke="${INK}" stroke-width="1.6"/><ellipse cx="76.5" cy="47" rx="3.6" ry="5" fill="${skin}" stroke="${INK}" stroke-width="1.6"/>`;
     out += P('M23 42 C23 20 36 14 50 14 C64 14 77 20 77 42 C77 58 66 70 50 70 C34 70 23 58 23 42Z', skin);
     out += `<path d="M24 38 C28 31 40 35 50 35 C60 35 72 31 76 38 L76 26 L24 26Z" fill="${sk2}" opacity=".35"/>` + `<path d="M30 66 C38 72 62 72 70 66 C62 75 38 75 30 66Z" fill="${sk2}" opacity=".35"/>`;
-    out += face(cfg, ex, skin);
+    out += face(cfg, ex, skin, kiss);
     out += (EXTRA[cfg.hair] ? hairP(EXTRA[cfg.hair]) : '') + hairP(CAP) + (BANGS[cfg.bangs] ? hairP(BANGS[cfg.bangs]) : '') + frontShine;
     out += accessory(cfg.acc, ac, hair);
     return out + '</svg>';
