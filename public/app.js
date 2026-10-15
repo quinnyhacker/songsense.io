@@ -306,7 +306,7 @@ function syncSongs() {
   const need = s.phase === 'playing' ? Array.from({ length: s.maxSongs - s.songs.length }, (_, i) => s.songs.length + i + 1) : [];
   const html = need.map((n, i) => `<div class="slot ${i === 0 ? 'next' : ''}">${icon('music')}<span>${i === 0 ? (s.me.isPicker ? `Song ${n}: add it below${n > 1 ? ' (optional)' : ''}` : `Song ${n}${n === 1 ? ': waiting for the picker&hellip;' : ' may appear later as another hint'}`) : `Song ${n} (optional hint)`}</span></div>`).join('');
   if (last.slots !== html) { slots.innerHTML = html; last.slots = html; }
-  if (show && s.songs.length) { const t = document.getElementById('songhint'); if (!t) slots.insertAdjacentHTML('beforebegin', '<p class="hint" id="songhint" style="margin-top:8px">Press play on a song. Spotify may play 30-second previews unless you\'re signed in to Spotify in this browser.</p>'); }
+  if (show && s.songs.length) { const t = document.getElementById('songhint'); if (!t) slots.insertAdjacentHTML('beforebegin', '<p class="hint" id="songhint" style="margin-top:8px">Press play on a song. Every hint plays as a 30-second clip for everyone, so all players hear the same thing.</p>'); }
   else { const t = document.getElementById('songhint'); if (t) t.remove(); }
 }
 
@@ -315,6 +315,7 @@ function syncSongs() {
    "Listen along" has their player follow that shared state (start position = reported position + time elapsed). Each listener's playback
    is therefore opted into by their own click. Audio is always Spotify's official player; nothing is streamed or proxied by us. */
 const frameCmd = (d, m) => { const f = d.querySelector('iframe'); if (f && f.contentWindow) f.contentWindow.postMessage(Object.assign({ ss: 1 }, m), '*'); };
+const CLIP_MS = 30000;                                         // every hint is a 30-second clip for everyone (signed-out listeners only get 30 s from Spotify anyway)
 let lastSent = null, sendAt = 0;
 window.addEventListener('message', (ev) => {
   const m = ev.data; if (!m || m.ss !== 1 || !state) return;
@@ -323,8 +324,10 @@ window.addEventListener('message', (ev) => {
   if (m.t !== 'update') return;
   p.paused = m.paused; p.pos = m.position; p.dur = m.duration; p.seen = Date.now(); p.ready = true;
   d.classList.toggle('playing', !m.paused && !m.buffering);
-  d.querySelector('.seek i').style.width = (m.duration ? Math.min(100, (m.position / m.duration) * 100) : 0) + '%';
-  d.querySelector('.time').textContent = m.duration ? mmss(m.position) + ' / ' + mmss(m.duration) : '0:00';
+  const clip = Math.min(m.duration || CLIP_MS, CLIP_MS);
+  d.querySelector('.seek i').style.width = Math.min(100, (m.position / clip) * 100) + '%';
+  d.querySelector('.time').textContent = mmss(Math.min(m.position, clip)) + ' / ' + mmss(clip);
+  if (!m.paused && m.position >= CLIP_MS) frameCmd(d, { t: 'pause' });      // full-song accounts stop at the same 30 s as everyone else
   d.querySelector('.sync').textContent = m.buffering ? 'Loading' : m.paused ? 'Paused' : 'Playing';
   if (state.me.isPicker && state.phase === 'playing') report(d);
 });
@@ -346,7 +349,7 @@ function follow() {                                            // listeners who 
     if (!pl || pl.n !== n) { if (!p.paused) { frameCmd(d, { t: 'pause' }); d._cmd = now; } continue; }
     const target = pl.playing ? pl.pos + (nowMs() - pl.at) : pl.pos;
     if (pl.playing) {
-      if (p.dur && target > p.dur) { if (!p.paused) frameCmd(d, { t: 'pause' }); continue; }
+      if (target > Math.min(p.dur || CLIP_MS, CLIP_MS)) { if (!p.paused) frameCmd(d, { t: 'pause' }); continue; }
       if (p.paused) { frameCmd(d, { t: 'playAt', sec: target / 1000 }); d._cmd = now; }
       else if (Math.abs(here - target) > 2500) { frameCmd(d, { t: 'seek', sec: target / 1000 }); d._cmd = now; }
     } else if (!p.paused) { frameCmd(d, { t: 'pause' }); d._cmd = now; }
