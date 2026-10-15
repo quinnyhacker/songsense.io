@@ -169,7 +169,7 @@
   .wmp .time { font:600 var(--t-xs) var(--mono); color:#b9d8f2; min-width:7.5ch; text-align:right; }
   .listenbar { display:flex; align-items:center; justify-content:space-between; gap:var(--s3); margin-bottom:var(--s3); padding:var(--s2) var(--s3); border-radius:var(--r); font-size:var(--t-sm); background:linear-gradient(180deg,#e9fbf3,#c9f0e0); border:1px solid #7fc6a6; color:#0b4a33; } .listenbar > span { display:block; } .listenbar svg { vertical-align:-3px; margin-right:4px; } .listenbar .btn { flex:none; }
   .wmp .embedhost { background:#121212; } .wmp iframe { display:block; width:100%; height:80px; border:0; }
-  .hits { display:grid; gap:2px; margin-top:var(--s3); } .hit { display:flex; align-items:center; gap:var(--s3); padding:var(--s2); border-radius:4px; border:1px solid transparent; } .hit:hover { background:rgba(255,255,255,.6); border-color:var(--line); }
+  .hits { display:grid; grid-template-columns:minmax(0,1fr); gap:2px; margin-top:var(--s3); } .hit { min-width:0; } .hit .btn { flex:none; } .hit { display:flex; align-items:center; gap:var(--s3); padding:var(--s2); border-radius:4px; border:1px solid transparent; } .hit:hover { background:rgba(255,255,255,.6); border-color:var(--line); }
   .hit img, .hit .art { width:44px; height:44px; border-radius:3px; object-fit:cover; background:var(--sky-lt); flex:none; border:1px solid var(--line-strong); } .hit .meta { flex:1; min-width:0; } .hit .meta b, .hit .meta span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .hit .meta span { color:var(--mute); font-size:var(--t-sm); }
   details.paste { margin-top:var(--s3); } details.paste summary { cursor:pointer; color:var(--aero-dk); font-size:var(--t-sm); padding:var(--s2) 0; font-weight:600; }
 
