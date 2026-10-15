@@ -2,8 +2,6 @@
 // Song Sense client. The server holds all game state; this file renders what the server says and sends actions.
 const $app = document.getElementById('app');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const TONES = ['#d4a97f', '#93bba6', '#8fa9cf', '#b9a0cf', '#cf94a4', '#cdc482', '#82cdc4', '#cf9575'];
-const tone = (s) => TONES[[...String(s)].reduce((a, c) => a + c.charCodeAt(0), 0) % TONES.length];
 
 const PATHS = {
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', search: '<circle cx="11" cy="11" r="6"/><path d="M15.5 15.5L20 20"/>', plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
@@ -11,7 +9,7 @@ const PATHS = {
   copy: '<rect x="9" y="9" width="10" height="10" rx="2"/><path d="M5 15V6.5A1.5 1.5 0 0 1 6.5 5H15"/>',
   share: '<path d="M12 4v11"/><path d="M8 8l4-4 4 4"/><path d="M5 13v5.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V13"/>',
   star: '<path d="M12 3.5l2.6 5.5 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.8l6-.8z"/>', music: '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
-  send: '<path d="M4 12l16-7-6 15-3-6z"/>', mic: '<rect x="9" y="4" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v3"/>',
+  send: '<path d="M4 12l16-7-6 15-3-6z"/>', pen: '<path d="M5 19l1-4L16 5l3 3L9 18z"/>', mic: '<rect x="9" y="4" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v3"/>',
 };
 const icon = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${PATHS[n]}</svg>`;
 const MARK = `<svg class="mark" viewBox="0 0 64 44" aria-hidden="true"><path class="bub" d="M8 2h48a6 6 0 0 1 6 6v22a6 6 0 0 1-6 6H32l-12 7v-7h-12a6 6 0 0 1-6-6V8a6 6 0 0 1 6-6z"/>
@@ -76,7 +74,25 @@ function setSection(id, html, key, force) {
 }
 
 /* ---------- shared pieces ---------- */
-const avatar = (p, sz = 40) => `<span class="av ${p.guessed ? 'ok' : p.isPicker ? 'pick' : ''} ${p.online === false ? 'off' : ''}" style="--sz:${sz}px;--tone:${tone(p.name)}" aria-hidden="true">${esc((p.name[0] || '?').toUpperCase())}${p.isHost ? `<span class="badge" title="Host">${icon('star')}</span>` : p.guessed ? `<span class="badge good">${icon('check')}</span>` : ''}</span>`;
+/* ---------- avatars: config -> layered SVG, with expression reactions ---------- */
+const myAvatar = () => { let v = store.get('songsense.avatar'); if (!Avatar.valid(v)) { v = Avatar.random(); store.set('songsense.avatar', v); } return v; };   // first visit gets a random one, saved locally
+const svgMemo = new Map();
+function avSvg(cfg, expr) { const k = JSON.stringify(cfg) + '|' + expr; if (!svgMemo.has(k)) { if (svgMemo.size > 500) svgMemo.clear(); svgMemo.set(k, Avatar.svg(cfg, { expr })); } return svgMemo.get(k); }
+const cfgOf = (p) => (p.avatar ? p.avatar : Avatar.fromName(p.name));      // players without a saved avatar get a stable one from their name
+function exprFor(p) {                                                       // happy/excited when right, confused when wrong, sad when losing ...
+  const base = Avatar.normalize(cfgOf(p)).expr, E = Avatar.EXPR;
+  if (p.react && nowMs() - p.react.at < 4500) return E[p.react.k];
+  if (!state) return base;
+  if (state.phase === 'gameover' && state.final) { const f = state.final, i = f.findIndex((x) => x.id === p.id); if (i >= 0) return f[i].score === f[0].score ? E.excited : (i === f.length - 1 && f.length > 1) ? E.sad : E.happy; }
+  if (state.phase === 'roundend' && state.result) return p.isPicker ? (state.result.guessers.length ? E.happy : E.sad) : p.guessed ? E.excited : E.sad;
+  if (state.phase === 'playing' && p.guessed) return E.happy;
+  return base;
+}
+function avatar(p, sz = 40, opts = {}) {
+  const ring = opts.plain ? '' : p.guessed ? 'ok' : p.isPicker ? 'pick' : '';
+  const badge = opts.badge || (opts.plain ? '' : p.isHost ? `<span class="badge" title="Host">${icon('star')}</span>` : p.guessed ? `<span class="badge good">${icon('check')}</span>` : '');
+  return `<span class="av ${ring} ${p.online === false ? 'off' : ''}" style="--sz:${sz}px" aria-hidden="true">${avSvg(cfgOf(p), exprFor(p))}${badge}</span>`;
+}
 const nowMs = () => Date.now() + clockOffset;
 const mmss = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const P = (id) => state.players.find((p) => p.id === id) || { name: 'Someone', score: 0 };
@@ -97,26 +113,32 @@ function tilesHtml(maskStr) {
   return `<div class="tiles" role="img" aria-label="${esc(maskStr.replace(/ /g, '').replace(/_/g, '').length ? 'Word with punctuation' : plural(maskStr.replace(/[^_]/g, '').length, 'letter'))}">${maskStr.split(' ').map((w) => `<span class="w">${[...w].map((c) => c === '_' ? '<span class="t"></span>' : `<span class="t sym">${esc(c)}</span>`).join('')}</span>`).join('')}</div>`;
 }
 
+/* ---------- window chrome ---------- */
+const CTL = { min: '<path d="M5 17h14"/>', max: '<rect x="5" y="5" width="14" height="14"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>' };
+const ctlSvg = (k) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${CTL[k]}</svg>`;
+const winCtl = (closeAttrs) => `<span class="ctl">${'<span aria-hidden="true">' + ctlSvg('min') + '</span><span aria-hidden="true">' + ctlSvg('max') + '</span>'}${closeAttrs ? `<button type="button" class="close" ${closeAttrs}>${ctlSvg('x')}</button>` : `<span class="close" aria-hidden="true">${ctlSvg('x')}</span>`}</span>`;
+const smallMark = MARK.replace('class="mark"', 'class="mark" style="width:22px;height:15px"');
+
 /* ---------- home ---------- */
 function renderHome() {
   document.body.dataset.phase = 'home'; inRoom = false;
   const typed = document.getElementById('nm'); if (typed) ui.name = typed.value;   // a re-render (e.g. invite check finishing) must not wipe the name being typed
-  const inv = ui.invite;
+  const inv = ui.invite, bad = inv && (inv.status === 'missing' || inv.status === 'full');
+  const meRow = `<div class="me-row"><button type="button" class="avbtn" data-act="avatar" aria-label="Customize your avatar" title="Customize your avatar">${avatar({ name: ui.name || 'you', avatar: myAvatar() }, 60, { badge: `<span class="badge" aria-hidden="true">${icon('pen')}</span>` })}</button>
+    <label class="sr" for="nm">Your name</label><input id="nm" name="name" maxlength="20" placeholder="Your name" value="${esc(ui.name)}" autocomplete="nickname" ${bad ? 'disabled' : ''}></div>`;
   let form;
   if (inv) {
     form = `<div class="card invite-card" id="invcard">${inviteCardHtml()}</div>
-      <form data-form="join" class="stack" style="margin-top:16px"><label class="sr" for="nm">Your name</label><input id="nm" name="name" maxlength="20" placeholder="Your name" value="${esc(ui.name)}" autocomplete="nickname" ${inv.status === 'missing' || inv.status === 'full' ? 'disabled' : ''}>
-      <button class="btn primary block" id="joinbtn" ${inv.status === 'missing' || inv.status === 'full' ? 'disabled' : ''}>Join game</button></form>
+      <form data-form="join" class="stack" style="margin-top:12px">${meRow}<button class="btn go block" id="joinbtn" ${bad ? 'disabled' : ''}>Join game</button></form>
       <p class="or">or</p><button class="btn block" data-act="home">Start your own game</button>`;
   } else {
-    form = `<form data-form="create" class="stack"><label class="sr" for="nm">Your name</label><input id="nm" name="name" maxlength="20" placeholder="Your name" value="${esc(ui.name)}" autocomplete="nickname">
-      <button class="btn primary block">Create a game</button></form><p class="or">or join with a code</p>
-      <form data-form="join" class="field"><label class="sr" for="cd">Room code</label><input id="cd" class="codein" name="code" maxlength="4" placeholder="CODE" value="${esc(ui.code)}" autocapitalize="characters" autocomplete="off" spellcheck="false"><button class="btn">Join</button></form>`;
+    form = `<form data-form="create" class="stack">${meRow}<button class="btn go block">Create a game</button></form><p class="or">or join with a code</p>
+      <form data-form="join" class="field"><label class="sr" for="cd">Room code</label><input id="cd" class="codein" name="code" maxlength="4" placeholder="CODE" value="${esc(ui.code)}" autocapitalize="characters" autocomplete="off" spellcheck="false"><button class="btn primary">Join</button></form>`;
   }
-  $app.innerHTML = `<div class="home enter">${MARK}<h1>Song <i>Sense</i></h1><p class="lede">Hint a word with up to three songs. Your friends type what it is. The faster they guess, the more they score.</p>
+  $app.innerHTML = `<div class="home enter"><div class="win"><div class="tb"><span class="ttl">${smallMark} Song Sense</span>${winCtl()}</div><div class="win-body">${MARK}<h1>Song <i>Sense</i></h1><p class="lede">Hint a word with up to three songs. Your friends type what it is. The faster they guess, the more they score.</p>
     ${ui.notice ? `<p class="banner warn" role="status" style="margin-bottom:16px">${esc(ui.notice)}</p>` : ''}${form}<p class="err" id="err" role="alert">${esc(ui.err)}</p>
     <ol class="how"><li>One player is the picker and secretly chooses 1 of 3 words: an emotion, adjective or scenario.</li><li>The picker adds a Spotify song, then optionally a second and third, to hint at it.</li><li>Everyone else listens and types guesses. Early guesses on early songs score the most.</li></ol>
-    <p class="foot">Free, no accounts. Works best with 3 to 8 friends.<br><button type="button" data-act="privacy">Privacy</button> &middot; Not affiliated with Spotify.</p></div>`;
+    <p class="foot">Free, no accounts. Works best with 3 to 8 friends.<br><button type="button" data-act="privacy">Privacy</button> &middot; Not affiliated with Spotify.</p></div></div></div>`;
   if (inv && inv.status === 'checking') checkInvite();
 }
 function inviteCardHtml() {
@@ -134,28 +156,37 @@ async function checkInvite() {
   const nm = document.getElementById('nm'), jb = document.getElementById('joinbtn'); if (nm) nm.disabled = bad; if (jb) jb.disabled = bad;
 }
 
-/* ---------- room shell ---------- */
+/* ---------- room shell: every panel is a glass window ---------- */
+const win = (id, title, inner, extra = '') => `<div class="win ${extra}" id="${id}-win"><div class="tb"><span class="ttl" id="t-${id}">${title}</span>${winCtl()}</div>${inner}</div>`;
 function shell() {
-  $app.innerHTML = `<div id="room"><div class="topbar"><span class="wordmark">${MARK.replace('class="mark"', 'class="mark" style="width:34px;height:24px"')}Song <i>Sense</i></span>
-    <span class="row" style="flex-wrap:nowrap;align-items:center"><button class="code" data-act="copyinvite" aria-label="Copy invite link for room ${esc(state.code)}"><b>${esc(state.code)}</b>${icon('copy')}</button>
-    <button class="btn ghost" id="leavebtn" data-act="leave">${icon('leave')}<span>Leave</span></button></span></div>
-    <div class="room"><div class="col" id="colmain"><section id="hero" class="card hero" aria-live="polite"></section><section id="main"></section><section id="songs" hidden><div class="songs" id="songlist"></div><div class="songs" id="slots" style="margin-top:12px"></div></section></div>
-    <div class="col side"><section id="players" class="card"></section><section id="chatcard" class="card chat"><div id="chatlog" class="chatlog" role="log" aria-live="polite" aria-label="Game chat" tabindex="0"></div>
-      <form id="chatform" class="chatform" autocomplete="off"><label class="sr" for="chatin" id="chatlbl">Message</label><input id="chatin" maxlength="80" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Say something&hellip;"><button class="btn sm primary" aria-label="Send">${icon('send')}</button></form></section></div></div></div>`;
+  $app.innerHTML = `<div id="room"><div class="win topwin"><div class="tb"><span class="ttl wordmark">${smallMark.replace('width:22px;height:15px', 'width:34px;height:24px')}Song <i>Sense</i></span>
+    <span class="tb-tools"><button class="code" data-act="copyinvite" aria-label="Copy invite link for room ${esc(state.code)}"><b>${esc(state.code)}</b>${icon('copy')}</button></span>${winCtl('id="leavebtn" data-act="leave" aria-label="Leave game" title="Leave game"')}</div></div>
+    <div class="room"><div class="col" id="colmain">
+      ${win('hero', '', '<section id="hero" class="win-body hero" aria-live="polite"></section>')}
+      <div class="win" id="mainwin"><div class="tb"><span class="ttl" id="t-main"></span>${winCtl()}</div><section id="main" class="win-body"></section></div>
+      <div class="win" id="songswin" hidden><div class="tb"><span class="ttl">${icon('music')} Song hints</span>${winCtl()}</div><section id="songs" class="win-body"><div class="songs" id="songlist"></div><div class="songs" id="slots" style="margin-top:12px"></div></section></div></div>
+    <div class="col side"><div class="win" id="playerswin"><div class="tb"><span class="ttl">Players</span>${winCtl()}</div><section id="players" class="win-body"></section></div>
+      <div class="win chat" id="chatcard"><div class="tb"><span class="ttl">${icon('send')} Chat &amp; guesses</span>${winCtl()}</div><div id="chatlog" class="chatlog" role="log" aria-live="polite" aria-label="Game chat" tabindex="0"></div>
+      <form id="chatform" class="chatform" autocomplete="off"><label class="sr" for="chatin" id="chatlbl">Message</label><input id="chatin" maxlength="80" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Say something&hellip;"><button class="btn sm primary" aria-label="Send">${icon('send')}</button></form></div></div></div></div>`;
   for (const k of Object.keys(last)) delete last[k];
   inRoom = true;
 }
+const setText = (id, t) => { const el = document.getElementById(id); if (el && el.textContent !== t) el.textContent = t; };
 function render() {
   if (!session || !state) return renderHome();
   if (!inRoom || !document.getElementById('room')) shell();
-  document.body.dataset.phase = state.phase;
-  setSection('hero', heroHtml(), state.phase + state.round + state.pickerId + (state.songs.length ? 's' : '') + state.me.guessed);
-  setSection('main', mainHtml(), state.phase + state.round + state.songs.length + state.settings.cats.join() + state.settings.secs + state.settings.cycles + state.me.isHost + state.players.length);
+  const s = state; document.body.dataset.phase = s.phase;
+  setText('t-hero', { lobby: 'Game Lobby', choosing: `Round ${s.round} of ${s.totalRounds}`, playing: `Round ${s.round} of ${s.totalRounds}`, roundend: `Round ${s.round} results`, gameover: 'Final results' }[s.phase]);
+  setText('t-main', { lobby: 'Lobby settings', choosing: 'Choose your word', playing: 'Add a song', roundend: 'Round results', gameover: 'Leaderboard' }[s.phase]);
+  setSection('hero', heroHtml(), s.phase + s.round + s.pickerId + (s.songs.length ? 's' : '') + s.me.guessed);
+  const mh = mainHtml();
+  setSection('main', mh, s.phase + s.round + s.songs.length + s.settings.cats.join() + s.settings.secs + s.settings.cycles + s.me.isHost + s.players.length + s.players.map((p) => (p.ready ? 1 : 0)).join(''));
+  document.getElementById('mainwin').hidden = mh === '';
   syncSongs();
   setSection('players', playersHtml(), 'p');
   updateChat(); updateChatForm(); tickClocks();
-  const lb = document.getElementById('leavebtn'); if (lb && !ui.leaveArmed) lb.querySelector('span').textContent = 'Leave';
 }
+setInterval(() => { if (inRoom && state) setSection('players', playersHtml(), 'p'); }, 1000);   // lets short-lived avatar reactions expire
 
 /* ---------- hero: always says what to do right now ---------- */
 function heroHtml() {
@@ -193,19 +224,22 @@ function heroHtml() {
 function settingsHtml() {
   const st = state.settings, host = state.me.isHost;
   const chips = (items, on, attr) => items.map((it) => `<button type="button" class="chip" aria-pressed="${on(it.v)}" ${host ? '' : 'disabled'} data-act="${attr}" data-v="${it.v}">${esc(it.l)}</button>`).join('');
-  return `<div class="card settings"><div class="grp"><h3>Word categories</h3><div class="row">${chips(Object.entries(cfg.categories).map(([k, c]) => ({ v: k, l: `${c.label} (${c.count})` })), (v) => st.cats.includes(v), 'cat')}</div></div>
-    <div class="grp"><h3>Guessing time per round</h3><div class="row">${chips(cfg.secs.map((n) => ({ v: n, l: n + 's' })), (v) => st.secs === Number(v), 'secs')}</div></div>
-    <div class="grp"><h3>Turns as picker each</h3><div class="row">${chips(Array.from({ length: cfg.maxCycles }, (_, i) => ({ v: i + 1, l: String(i + 1) })), (v) => st.cycles === Number(v), 'cycles')}</div></div>
+  return `<div class="card settings"><div class="grp"><h3>Word categories</h3><div class="segs">${chips(Object.entries(cfg.categories).map(([k, c]) => ({ v: k, l: `${c.label} (${c.count})` })), (v) => st.cats.includes(v), 'cat')}</div></div>
+    <div class="grp"><h3>Guessing time per round</h3><div class="segs">${chips(cfg.secs.map((n) => ({ v: n, l: n + 's' })), (v) => st.secs === Number(v), 'secs')}</div></div>
+    <div class="grp"><h3>Turns as picker each</h3><div class="segs">${chips(Array.from({ length: cfg.maxCycles }, (_, i) => ({ v: i + 1, l: String(i + 1) })), (v) => st.cycles === Number(v), 'cycles')}</div></div>
     ${host ? '' : '<p class="hint" style="margin-top:12px">Only the host can change these.</p>'}</div>`;
 }
 function mainHtml() {
   const s = state, me = s.me;
   if (s.phase === 'lobby') {
+    const meP = P(me.id), guests = s.players.filter((p) => !p.isHost), nready = guests.filter((p) => p.ready).length;
     const can = s.players.length >= cfg.minPlayers && s.settings.cats.length;
     return `<div class="card invite-card"><p class="label">Room code</p><div class="tilesbig" aria-label="Room code ${esc(s.code)}">${[...s.code].map((c) => `<span>${esc(c)}</span>`).join('')}</div>
-      <div class="row center" style="margin-top:16px"><button class="btn sm" data-act="copyinvite">${icon('copy')}Copy invite link</button>${navigator.share ? `<button class="btn sm" data-act="share">${icon('share')}Share</button>` : ''}</div>
-      <p class="hint" style="margin-top:12px">Friends open the link or enter the code at ${esc(location.host)}.</p></div>${settingsHtml()}
-      ${me.isHost ? `<button class="btn primary block" data-act="start" ${can ? '' : 'disabled'}>${can ? 'Start game' : 'Need 2+ players'}</button>` : `<p class="banner warn" style="text-align:center">Waiting for ${esc(hostName())} to start the game&hellip;</p>`}<p class="err" id="err" role="alert">${esc(ui.err)}</p>`;
+      <div class="row center" style="margin-top:12px"><button class="btn sm" data-act="copyinvite">${icon('copy')}Copy invite link</button>${navigator.share ? `<button class="btn sm" data-act="share">${icon('share')}Share</button>` : ''}</div>
+      <p class="hint" style="margin-top:10px">Friends open the link or enter the code at ${esc(location.host)}.</p></div>${settingsHtml()}
+      ${me.isHost ? `<button class="btn go block" data-act="start" ${can ? '' : 'disabled'}>${can ? 'Start game' : 'Need 2+ players'}</button><p class="hint" style="text-align:center">${guests.length ? `${nready} of ${guests.length} players ready${nready < guests.length ? ' (you can start anyway)' : ''}` : 'Waiting for friends to join&hellip;'}</p>`
+        : `<button class="btn ${meP.ready ? '' : 'go'} block" data-act="ready" aria-pressed="${!!meP.ready}">${meP.ready ? 'Ready! (click to undo)' : "I'm ready!"}</button><p class="hint" style="text-align:center">Waiting for ${esc(hostName())} to start the game&hellip;</p>`}
+      <button class="btn sm block" data-act="avatar">${icon('pen')}Edit my avatar</button><p class="err" id="err" role="alert">${esc(ui.err)}</p>`;
   }
   if (s.phase === 'choosing') {
     if (!me.isPicker) return '';
@@ -230,47 +264,52 @@ function pickerControls() {
 function resultsHtml() {
   const r = state.result, gs = r.guessers;
   return `<div class="card res"><p class="label" style="text-align:center">The ${esc(catLabel(r.category || '').toLowerCase())} was</p><p class="answer">${esc(r.word || '')}</p>
-    ${gs.length ? `<ol class="rank">${gs.map((g, i) => `<li><span class="pos">${i + 1}</span>${avatar({ name: g.name, guessed: false }, 34)}<span class="nm">${esc(g.name)}<span class="tag">after ${plural(g.songs, 'song')}</span></span><span class="pts" style="color:var(--good)">+${g.points}</span></li>`).join('')}</ol>` : '<p class="muted" style="text-align:center;margin:12px 0">Nobody got it this time.</p>'}
+    ${gs.length ? `<ol class="rank">${gs.map((g, i) => `<li><span class="pos">${i + 1}</span>${avatar(P(g.id), 38, { plain: true })}<span class="nm">${esc(g.name)}<span class="tag">after ${plural(g.songs, 'song')}</span></span><span class="pts" style="color:var(--good)">+${g.points}</span></li>`).join('')}</ol>` : '<p class="muted" style="text-align:center;margin:12px 0">Nobody got it this time.</p>'}
     ${r.pickerPoints ? `<p class="hint" style="text-align:center;margin-top:12px"><b style="color:var(--text)">${esc(r.pickerName)}</b> earns +${r.pickerPoints} for a great hint</p>` : ''}
     ${r.missed.length && gs.length ? `<p class="hint" style="text-align:center;margin-top:6px">Didn't get it: ${esc(r.missed.join(', '))}</p>` : ''}</div>
     ${state.me.isHost ? `<button class="btn block" data-act="next">Next round now</button>` : ''}<p class="err" id="err" role="alert">${esc(ui.err)}</p>`;
 }
 function finalHtml() {
   const f = state.final || [], top = f[0], tie = f.filter((x) => x.score === (top || {}).score);
-  return `<div class="card"><div class="winner pop"><svg class="i crown" viewBox="0 0 24 24" aria-hidden="true">${PATHS.star}</svg><p class="label" style="margin-top:8px">${tie.length > 1 ? 'It\'s a tie' : 'Winner'}</p><h2>${esc(tie.map((t) => t.name).join(' & '))}</h2></div>
-    <ol class="rank">${f.map((p, i) => `<li><span class="pos">${i + 1}</span>${avatar({ name: p.name }, 34)}<span class="nm">${esc(p.name)}${p.id === state.me.id ? '<span class="tag">you</span>' : ''}</span><span class="pts nums">${p.score}</span></li>`).join('')}</ol></div>
+  return `<div class="card"><div class="winner pop"><div class="podium">${top ? avatar(P(top.id), 110, { plain: true }) : ''}</div><p class="label" style="margin-top:10px">${tie.length > 1 ? 'It\'s a tie' : 'Winner'}</p><h2>${esc(tie.map((t) => t.name).join(' & '))}</h2></div>
+    <ol class="rank">${f.map((p, i) => `<li><span class="pos">${i + 1}</span>${avatar(P(p.id), 38, { plain: true })}<span class="nm">${esc(p.name)}${p.id === state.me.id ? '<span class="tag">you</span>' : ''}</span><span class="pts nums">${p.score}</span></li>`).join('')}</ol></div>
     <div class="stack-gap" style="margin-top:16px">${state.me.isHost ? `<button class="btn primary block" data-act="again">Play again</button>` : `<p class="banner warn" style="text-align:center">Waiting for ${esc(hostName())} to start another game&hellip;</p>`}</div><p class="err" id="err" role="alert">${esc(ui.err)}</p>`;
 }
 
-/* ---------- songs: iframes are kept alive between renders so playback never restarts ---------- */
+/* ---------- songs: a media-player frame around Spotify's official embed ---------- */
+// The audio always comes from Spotify's own embedded player, started by the listener's click. We only frame it (art, title, artist).
+// (Spotify's iFrame API needs 'unsafe-eval' in our CSP, so it is deliberately not used; no fake controls or audio visuals.)
 const embedSrc = (id) => `https://open.spotify.com/embed/track/${encodeURIComponent(id)}?utm_source=generator&theme=0`;
+const splitTitle = (t) => { const [x, ...y] = String(t || '').split(' \u2014 '); return { title: x || 'Spotify track', artist: y.join(' \u2014 ') }; };
 function syncSongs() {
-  const s = state, box = document.getElementById('songs'), list = document.getElementById('songlist'), slots = document.getElementById('slots'); if (!box) return;
+  const s = state, box = document.getElementById('songswin'), list = document.getElementById('songlist'), slots = document.getElementById('slots'); if (!box) return;
   const show = (s.phase === 'playing' || s.phase === 'roundend') && (s.songs.length > 0 || s.phase === 'playing'); box.hidden = !show;
   const have = [...list.children]; const want = s.phase === 'playing' || s.phase === 'roundend' ? s.songs : [];
   have.forEach((el) => { if (!want.some((w) => w.trackId === el.dataset.id)) el.remove(); });
   for (const w of want) if (!list.querySelector(`[data-id="${w.trackId}"]`)) {
-    const d = document.createElement('div'); d.className = 'song enter'; d.dataset.id = w.trackId;
-    d.innerHTML = `<div class="cap"><span class="label">Song ${w.n} of ${s.maxSongs}</span><span class="hint">${esc(w.title)}</span></div><iframe src="${embedSrc(w.trackId)}" allow="encrypted-media; clipboard-write" loading="lazy" title="Spotify player for song ${w.n}"></iframe>`;
+    const t = splitTitle(w.title), d = document.createElement('div'); d.className = 'wmp enter'; d.dataset.id = w.trackId;
+    d.innerHTML = `<div class="wmp-top">${w.thumb ? `<img class="art" src="${esc(w.thumb)}" alt="Album art" referrerpolicy="no-referrer">` : `<span class="art">${icon('music')}</span>`}
+        <div class="meta"><span class="n">Hint song ${w.n} of ${s.maxSongs}</span><b>${esc(t.title)}</b><span class="a">${esc(t.artist)}</span></div></div>
+      <div class="embedhost"><iframe src="${embedSrc(w.trackId)}" allow="encrypted-media; clipboard-write" loading="lazy" title="Spotify player for song ${w.n}"></iframe></div>`;
     list.appendChild(d);
   }
   const need = s.phase === 'playing' ? Array.from({ length: s.maxSongs - s.songs.length }, (_, i) => s.songs.length + i + 1) : [];
   const html = need.map((n, i) => `<div class="slot ${i === 0 ? 'next' : ''}">${icon('music')}<span>${i === 0 ? (s.me.isPicker ? `Song ${n}: add it below${n > 1 ? ' (optional)' : ''}` : `Song ${n}${n === 1 ? ': waiting for the picker&hellip;' : ' may appear later as another hint'}`) : `Song ${n} (optional hint)`}</span></div>`).join('');
   if (last.slots !== html) { slots.innerHTML = html; last.slots = html; }
-  if (show && s.songs.length) { const t = document.getElementById('songhint'); if (!t) slots.insertAdjacentHTML('beforebegin', '<p class="hint" id="songhint" style="margin-top:8px">Press play on each player. Spotify may play 30-second previews unless you\'re signed in to Spotify in this browser.</p>'); }
+  if (show && s.songs.length) { const t = document.getElementById('songhint'); if (!t) slots.insertAdjacentHTML('beforebegin', '<p class="hint" id="songhint" style="margin-top:8px">Press play on a song. Spotify may play 30-second previews unless you\'re signed in to Spotify in this browser.</p>'); }
   else { const t = document.getElementById('songhint'); if (t) t.remove(); }
 }
 
 /* ---------- players ---------- */
 function playersHtml() {
   const s = state, ps = s.phase === 'lobby' ? s.players : [...s.players].sort((a, b) => b.score - a.score);
-  return `<p class="label" style="margin-bottom:4px">Players &middot; ${s.players.length}</p><ul class="players">${ps.map((p) => {
-    let st = '', cls = '';
-    if (s.phase === 'lobby') { st = p.online ? (p.isHost ? 'Host' : 'Ready') : 'Away'; cls = p.online ? 'good' : ''; }
+  return `<p class="label" style="margin-bottom:4px">${plural(s.players.length, 'player')}</p><ul class="players">${ps.map((p) => {
+    let st = '', cls = '', dot = '';
+    if (s.phase === 'lobby') { st = !p.online ? 'Away' : p.isHost ? 'Host' : p.ready ? 'Ready' : 'Not ready'; cls = p.online && p.ready ? 'good' : ''; dot = p.online && !p.isHost ? `<span class="rdy ${p.ready ? '' : 'no'}"></span>` : ''; }
     else if (s.phase === 'roundend') { st = p.isPicker ? 'Picker' : p.guessed ? 'Got it' : 'Missed'; cls = p.guessed ? 'good' : ''; }
     else if (s.phase === 'gameover') st = p.online ? '' : 'Away';
     else if (p.isPicker) { st = 'Picker'; cls = 'acc'; } else if (p.guessed) { st = 'Got it!'; cls = 'good'; } else st = s.phase === 'playing' ? (p.online ? 'Guessing' : 'Away') : (p.online ? 'Waiting' : 'Away');
-    return `<li>${avatar(p, 36)}<span class="nm">${esc(p.name)}${p.id === s.me.id ? ' <span class="hint">(you)</span>' : ''}<span class="st ${cls}" style="display:block">${st}</span></span><span class="sc nums">${p.score}${p.gain ? `<span class="gain">+${p.gain}</span>` : ''}</span></li>`;
+    return `<li class="${p.id === s.me.id ? 'me' : ''}">${avatar(p, 46)}<span class="nm">${esc(p.name)}${p.id === s.me.id ? ' <span class="hint">(you)</span>' : ''}<span class="st ${cls}">${dot}${st}</span></span><span class="sc nums">${p.score}${p.gain ? `<span class="gain">+${p.gain}</span>` : ''}</span></li>`;
   }).join('')}</ul>`;
 }
 
@@ -300,6 +339,55 @@ function updateChatForm() {
   inp.closest('form').querySelector('button').disabled = off;
 }
 
+/* ---------- avatar maker ---------- */
+const cr = { cfg: null, tab: 'hair', prev: null, focus: '', opener: null };
+const CR_TABS = [['hair', 'Hair'], ['face', 'Face'], ['skin', 'Skin'], ['clothes', 'Clothes'], ['acc', 'Accessories']];
+const optGrid = (field, label) => `<h4>${label}</h4><div class="ogrid" role="group" aria-label="${label}">${Array.from({ length: Avatar.SCHEMA[field] }, (_, i) => {
+  const nm = Avatar.NAMES[field][i]; return `<button type="button" class="oth" data-cr="${field}" data-i="${i}" data-k="${field}${i}" aria-pressed="${cr.cfg[field] === i}" aria-label="${label}: ${nm}">${Avatar.svg({ ...cr.cfg, [field]: i })}<small>${nm}</small></button>`; }).join('')}</div>`;
+const swatches = (field, colors, label) => `<h4>${label}</h4><div class="swatches" role="group" aria-label="${label}">${colors.map((c, i) => `<button type="button" class="sw" style="background:${c}" data-cr="${field}" data-i="${i}" data-k="${field}${i}" aria-pressed="${cr.cfg[field] === i}" aria-label="${label} ${i + 1}"></button>`).join('')}</div>`;
+function crPane() {
+  switch (cr.tab) {
+    case 'hair': return optGrid('hair', 'Hairstyle') + optGrid('bangs', 'Bangs') + swatches('hairColor', Avatar.HAIR_COLORS, 'Hair color');
+    case 'face': return optGrid('eyes', 'Eye shape') + swatches('eyeColor', Avatar.EYE_COLORS, 'Eye color') + optGrid('brows', 'Eyebrows') + optGrid('expr', 'Expression') + optGrid('blush', 'Blush') + optGrid('freckles', 'Freckles') + optGrid('mark', 'Facial marking');
+    case 'skin': return swatches('skin', Avatar.SKIN, 'Skin tone');
+    case 'clothes': return optGrid('clothes', 'Top') + swatches('clothesColor', Avatar.CLOTH_COLORS, 'Color');
+    default: return optGrid('acc', 'Accessory') + swatches('accColor', Avatar.CLOTH_COLORS, 'Accessory color');
+  }
+}
+function renderCreator() {
+  const el = document.getElementById('creator'), old = el.querySelector('.pane'), top = old ? old.scrollTop : 0, ex = cr.prev === null ? cr.cfg.expr : cr.prev;
+  el.innerHTML = `<div class="win cw" role="dialog" aria-modal="true" aria-labelledby="cwt"><div class="tb"><span class="ttl" id="cwt">Avatar Maker</span><span class="ctl"><span aria-hidden="true">${ctlSvg('min')}</span><span aria-hidden="true">${ctlSvg('max')}</span><button type="button" class="close" data-ca="close" aria-label="Close avatar maker">${ctlSvg('x')}</button></span></div>
+    <div class="win-body"><div class="cw-grid"><div class="cw-prev"><div class="frame"><div class="scene">${Avatar.svg(cr.cfg, { expr: ex })}</div></div>
+      <div><p class="label" style="text-align:center;margin-bottom:6px">Preview a mood</p><div class="ex-row">${Avatar.NAMES.expr.map((n, i) => `<button type="button" class="btn" data-ca="prev" data-i="${i}" data-k="p${i}" aria-pressed="${cr.prev === i}">${n}</button>`).join('')}</div></div></div>
+      <div class="cw-opts"><div class="tabs" role="tablist">${CR_TABS.map(([k, l]) => `<button type="button" class="tab" role="tab" data-ca="tab" data-i="${k}" data-k="t${k}" aria-selected="${cr.tab === k}">${l}</button>`).join('')}</div><div class="pane" role="tabpanel">${crPane()}</div></div></div>
+    <div class="cw-foot"><button type="button" class="btn" data-ca="random">Randomize</button><button type="button" class="btn" data-ca="reset">Reset</button><span class="sp"></span><button type="button" class="btn" data-ca="close">Cancel</button><button type="button" class="btn go" data-ca="save">Save Avatar</button></div></div></div>`;
+  const pane = el.querySelector('.pane'); if (pane) pane.scrollTop = top;
+  if (cr.focus) { const f = el.querySelector(`[data-k="${cr.focus}"]`); if (f) f.focus(); }
+}
+function openCreator() {
+  cr.cfg = { ...myAvatar() }; cr.tab = 'hair'; cr.prev = null; cr.focus = 'thair'; cr.opener = document.activeElement;
+  const el = document.getElementById('creator'); el.hidden = false; document.body.style.overflow = 'hidden'; renderCreator();
+}
+function closeCreator() {
+  const el = document.getElementById('creator'); el.hidden = true; el.innerHTML = ''; document.body.style.overflow = '';
+  if (cr.opener && cr.opener.focus && document.contains(cr.opener)) cr.opener.focus();
+}
+async function saveAvatar() {
+  const a = Avatar.normalize(cr.cfg); store.set('songsense.avatar', a); closeCreator(); toast('Avatar saved!');
+  if (session) { try { await api('avatar', { avatar: a }); await poll(true); } catch (e) { toast(e.message); } } else if (document.getElementById('nm')) renderHome();
+}
+document.getElementById('creator').addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.cr) { cr.cfg[t.dataset.cr] = Number(t.dataset.i); cr.focus = t.dataset.k; return renderCreator(); }
+  const k = t.dataset.ca; if (!k) return; cr.focus = t.dataset.k || '';
+  if (k === 'tab') cr.tab = t.dataset.i; else if (k === 'prev') cr.prev = cr.prev === Number(t.dataset.i) ? null : Number(t.dataset.i);
+  else if (k === 'random') { cr.cfg = Avatar.random(); cr.focus = ''; } else if (k === 'reset') { cr.cfg = { ...Avatar.DEFAULT }; cr.focus = ''; }
+  else if (k === 'close') return closeCreator(); else if (k === 'save') return saveAvatar();
+  renderCreator();
+});
+document.getElementById('creator').addEventListener('mousedown', (e) => { if (e.target.id === 'creator') closeCreator(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('creator').hidden) closeCreator(); });
+
 /* ---------- events ---------- */
 const val = (form, n) => (form.elements[n] ? String(form.elements[n].value || '').trim() : '');
 document.addEventListener('submit', async (e) => {
@@ -312,11 +400,11 @@ document.addEventListener('submit', async (e) => {
   }
   const kind = f.dataset.form; if (!kind) return;
   if (kind === 'create' || kind === 'join') {
-    const name = val(f, 'name'); ui.name = name; store.set('songsense.name', name);
+    const nmEl = document.getElementById('nm'), name = (nmEl ? nmEl.value : val(f, 'name')).trim(); ui.name = name; store.set('songsense.name', name);
     const code = kind === 'join' ? (ui.invite ? ui.invite.code : val(f, 'code').toUpperCase().replace(/[^A-Z]/g, '')) : null; ui.code = code || '';
     if (!name) return setErr('Enter your name first.');
     if (kind === 'join' && !code) return setErr('Enter the 4-letter room code.');
-    try { const r = await api(kind, { name, code }); save({ code: r.code, pid: r.pid }); ui.invite = null; ui.err = ''; ui.notice = ''; history.replaceState(null, '', location.pathname); await poll(true); }
+    try { const r = await api(kind, { name, code, avatar: myAvatar() }); save({ code: r.code, pid: r.pid }); ui.invite = null; ui.err = ''; ui.notice = ''; history.replaceState(null, '', location.pathname); await poll(true); }
     catch (er) { setErr(er.message); }
   } else if (kind === 'search') {
     const q = val(f, 'q'); ui.sq = q; if (!q) return; ui.searching = true; render();
@@ -331,15 +419,17 @@ document.addEventListener('submit', async (e) => {
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act;
   if (a === 'privacy') return document.getElementById('privacy').showModal();
+  if (a === 'avatar') return openCreator();
   if (a === 'home') { ui.invite = null; ui.code = ''; history.replaceState(null, '', location.pathname); return renderHome(); }
   if (a === 'copyinvite') { const u = inviteUrl(); try { await navigator.clipboard.writeText(u); toast('Invite link copied'); } catch { prompt('Copy this invite link:', u); } return; }
   if (a === 'share') { try { await navigator.share({ title: 'Song Sense', text: 'Join my Song Sense game!', url: inviteUrl() }); } catch { /* cancelled */ } return; }
   if (a === 'leave') {
-    if (!ui.leaveArmed) { ui.leaveArmed = true; b.querySelector('span').textContent = 'Tap again'; setTimeout(() => { ui.leaveArmed = false; const lb = document.getElementById('leavebtn'); if (lb) lb.querySelector('span').textContent = 'Leave'; }, 3000); return; }
+    if (!ui.leaveArmed) { ui.leaveArmed = true; toast('Click the red X again to leave the game'); setTimeout(() => { ui.leaveArmed = false; }, 3000); return; }
     try { await api('leave', {}); } catch { /* leave locally anyway */ } return leave('');
   }
   if (!state) return;
   if (a === 'start') return act('start', {});
+  if (a === 'ready') return act('ready', { ready: !P(state.me.id).ready });
   if (a === 'next') return act('next', {});
   if (a === 'again') return act('again', {});
   if (a === 'choose') return act('choose', { index: Number(b.dataset.i) });

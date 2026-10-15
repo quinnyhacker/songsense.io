@@ -4,6 +4,14 @@ A multiplayer word-guessing party game you play in the browser. One player is th
 
 No accounts, no database, no runtime dependencies (plain Node). Rooms live in server memory.
 
+## Look and avatars
+
+The interface is a bright "Aero" glass-window theme (design tokens and components live at the top of `public/index.html`). Every player builds a cartoon head-and-shoulders avatar in the built-in **Avatar Maker** (click your avatar on the home page or "Edit my avatar" in the lobby): hair style, bangs and color, eye shape and color, eyebrows, expression, blush, freckles, facial markings, skin tone, tops and colors, and accessories (headphones, earbuds, glasses, beanie, clips, bow, music note), with Randomize, Reset and Save. A first-time visitor gets a random avatar.
+
+* `public/avatar.js` assembles each avatar from independent SVG layers (back hair, clothing, neck, head, face, front hair, accessories) from a small config of option indexes, so it is crisp at any size and needs no image files or AI generation. The server loads the same file to validate configs, so the schema lives in one place.
+* The config is saved in the browser (`localStorage`), sent when you join or edit, and shown in the lobby, player list and results. Invalid configs are ignored (the client shows a stable default made from the name).
+* Avatars react: excited when you guess right or the picker is winning, confused after a wrong guess (a few seconds), happy or sad on the results and final screens. Players also toggle **Ready** in the lobby (the host can start anyway).
+
 ## How a game works
 
 1. The host creates a game and shares the invite link or 4-letter code. Up to 12 players. The host chooses word categories, guessing time (60/90/120 s) and turns each (1 to 3).
@@ -65,7 +73,7 @@ You register the domain yourself (any registrar: Namecheap, Porkbun, Cloudflare,
 
 ## Spotify notes
 
-* Playback uses **Spotify's official embedded player only**, started by the player's own play button. Song Sense never streams or proxies audio, and shows **no images or video timed to the audio**, which keeps it clear of Spotify Developer Policy III.6 (no syncing sound recordings with visual media).
+* Playback uses **Spotify's official embedded player only**, started by the player's own play button. The frame around it shows art, title and artist, but there are deliberately no custom play controls or audio-driven visuals (Spotify's iFrame API would need `unsafe-eval` in the page's CSP). Song Sense never streams or proxies audio, and shows **no images or video timed to the audio**, which keeps it clear of Spotify Developer Policy III.6 (no syncing sound recordings with visual media).
 * Spotify **Development Mode** limits (as of early 2026): the app owner needs Premium, the app is capped at a handful of allowlisted users for API features, and search returns at most 10 results. Only **search** uses the API; the paste-a-link fallback (which uses Spotify's public oEmbed) keeps the game fully playable if search is limited or unavailable. Embeds play 30-second previews to listeners who are not signed in to Spotify in their browser.
 * Opening the game to the public with search enabled needs Spotify's extended-access review. Until then, search works for allowlisted accounts and everyone else can paste links.
 * Never paste API keys into chat, issues or code. If a key was ever exposed, rotate it in the Spotify developer dashboard.
@@ -89,7 +97,7 @@ lib/match.js       fuzzy guess matching
 lib/scoring.js     points
 lib/words.js       word lists + aliases
 lib/ratelimit.js   per-IP limiter
-public/            index.html (design system + CSS), app.js (UI), favicon.svg
+public/            index.html (Aero design system + CSS), app.js (UI + avatar maker), avatar.js (avatar renderer + schema), favicon.svg
 scripts/           unit.js, e2e.js (full game with simulated players), bot.js (dev helper)
 render.yaml        Render blueprint
 ```

@@ -9,6 +9,8 @@ const words = require('./lib/words');
 const { judge, mask } = require('./lib/match');
 const { guessPoints, pickerPoints } = require('./lib/scoring');
 const { limiter } = require('./lib/ratelimit');
+const Avatar = require('./public/avatar.js');      // same module the browser uses, so the schema is defined once
+const cleanAvatar = (a) => (Avatar.valid(a) ? a : null);   // untrusted input: store only an exact, in-range config (null = client shows a name-based default)
 
 const PORT = process.env.PORT || 3000;
 const HAS_SEARCH = !!(process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET);
@@ -40,7 +42,7 @@ function newCode() {
 }
 
 /* ---------- rate limits (per client IP) ---------- */
-const limits = { global: limiter(2400, 60000), create: limiter(20, 600000), join: limiter(60, 600000), search: limiter(60, 60000), song: limiter(40, 60000), guess: limiter(240, 60000) };
+const limits = { avatar: limiter(60, 60000), global: limiter(2400, 60000), create: limiter(20, 600000), join: limiter(60, 600000), search: limiter(60, 60000), song: limiter(40, 60000), guess: limiter(240, 60000) };
 const clientIp = (req) => (TRUST_PROXY && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || 'unknown';
 function limit(name, req) { const r = limits[name](clientIp(req)); if (!r.ok) { const e = httpErr(429, `You're doing that a lot. Try again in ${r.retry}s.`); e.retry = r.retry; throw e; } }
 
@@ -93,7 +95,7 @@ function viewFor(room, pid) {
   const me = room.players[pid], isPicker = pid === room.pickerId, now = Date.now();
   const revealed = room.phase === 'roundend' || room.phase === 'gameover';
   const players = orderedIds(room).map((id) => { const p = room.players[id];
-    return { id, name: p.name, score: p.score, isHost: id === room.hostId, online: isOnline(p), isPicker: inGame(room) && id === room.pickerId, guessed: !!room.guessed[id], gain: revealed ? (room.gains[id] || 0) : 0 }; });
+    return { id, name: p.name, avatar: p.avatar || null, ready: id === room.hostId || !!p.ready, react: p.react && now - p.react.at < 4500 ? p.react : null, score: p.score, isHost: id === room.hostId, online: isOnline(p), isPicker: inGame(room) && id === room.pickerId, guessed: !!room.guessed[id], gain: revealed ? (room.gains[id] || 0) : 0 }; });
   const out = { v: room.v, now, code: room.code, phase: room.phase, round: room.round, totalRounds: room.round + room.queue.length, settings: room.settings,
     me: { id: pid, name: me.name, isHost: pid === room.hostId, isPicker, guessed: !!room.guessed[pid] }, players, pickerId: inGame(room) ? room.pickerId : null,
     deadline: room.deadline, span: room.span, scoreClockStart: room.firstSongAt, songs: room.songs.map((s, i) => ({ n: i + 1, trackId: s.trackId, title: s.title, thumb: s.thumb })), maxSongs: MAX_SONGS };
@@ -190,7 +192,7 @@ const routes = {
     const name = cleanName(b.name); if (!name) throw httpErr(400, 'Enter your name to host a game.');
     const code = newCode(), pid = rid(8);
     rooms.set(code, { code, v: 1, updated: Date.now(), active: Date.now(), hostId: pid, phase: 'lobby', round: 0, queue: [], settings: { cats: ['emotions', 'adjectives', 'scenarios'], secs: 90, cycles: 1 },
-      players: { [pid]: { name, score: 0, lastSeen: Date.now(), joinedAt: Date.now() } }, pickerId: null, options: [], word: null, songs: [], guessed: {}, gains: {}, usedWords: new Set(),
+      players: { [pid]: { name, avatar: cleanAvatar(b.avatar), ready: true, score: 0, lastSeen: Date.now(), joinedAt: Date.now() } }, pickerId: null, options: [], word: null, songs: [], guessed: {}, gains: {}, usedWords: new Set(),
       deadline: null, firstSongAt: null, result: null, final: null, chat: [], chatSeq: 0 });
     return { code, pid };
   },
@@ -202,12 +204,21 @@ const routes = {
     const name = cleanName(b.name); if (!name) throw httpErr(400, 'Enter your name to join.');
     if (Object.keys(room.players).length >= MAX_PLAYERS) throw httpErr(400, 'This game is full.');
     if (Object.values(room.players).some((p) => p.name.toLowerCase() === name.toLowerCase())) throw httpErr(400, 'Someone in this game already has that name. Try another.');
-    const pid = rid(8); room.players[pid] = { name, score: 0, lastSeen: Date.now(), joinedAt: Date.now() }; room.active = Date.now();
+    const pid = rid(8); room.players[pid] = { name, avatar: cleanAvatar(b.avatar), ready: false, score: 0, lastSeen: Date.now(), joinedAt: Date.now() }; room.active = Date.now();
     if (inGame(room)) for (let i = 0; i < room.settings.cycles; i++) room.queue.push(pid);   // latecomers get their turn(s) at the end
     say(room, 'sys', `${name} joined.`); touch(room);
     return { code, pid };
   },
   'POST /api/leave': async (b) => { const room = getRoom(b.code, b.pid); removePlayer(room, b.pid); return { ok: true }; },
+  'POST /api/avatar': async (b, req) => {
+    limit('avatar', req);
+    const room = getRoom(b.code, b.pid); const a = cleanAvatar(b.avatar); if (!a) throw httpErr(400, "That avatar isn't valid.");
+    room.players[b.pid].avatar = a; touch(room); return { ok: true };
+  },
+  'POST /api/ready': async (b) => {
+    const room = getRoom(b.code, b.pid); if (room.phase !== 'lobby') throw httpErr(400, 'Ready checks only happen in the lobby.');
+    room.players[b.pid].ready = b.ready === true; touch(room); return { ok: true };
+  },
   'POST /api/settings': async (b) => {
     const room = getRoom(b.code, b.pid); hostOnly(room, b.pid);
     if (room.phase !== 'lobby') throw httpErr(400, 'Settings can only change in the lobby.');
@@ -217,7 +228,7 @@ const routes = {
     const room = getRoom(b.code, b.pid); hostOnly(room, b.pid);
     if (room.phase !== 'lobby') throw httpErr(400, 'The game has already started.');
     if (Object.keys(room.players).length < MIN_PLAYERS) throw httpErr(400, 'You need at least 2 players to start.');
-    for (const p of Object.values(room.players)) p.score = 0;
+    for (const p of Object.values(room.players)) { p.score = 0; p.ready = false; p.react = null; }
     room.usedWords = new Set(); room.round = 0; room.queue = [];
     const turnOrder = shuffle(orderedIds(room));                  // same random order every cycle
     for (let c = 0; c < room.settings.cycles; c++) room.queue.push(...turnOrder);
@@ -264,12 +275,13 @@ const routes = {
     if (verdict === 'correct') {
       const total = room.settings.secs * 1000, remaining = Math.max(0, room.deadline - now);
       const points = guessPoints(total, remaining, room.songs.length);
-      me.score += points; room.gains[b.pid] = points; room.guessed[b.pid] = { points, songs: room.songs.length, at: now };
+      me.score += points; me.react = { k: 'excited', at: now }; room.gains[b.pid] = points; room.guessed[b.pid] = { points, songs: room.songs.length, at: now };
       room.gains[room.pickerId] = (room.gains[room.pickerId] || 0) + pickerPoints(points);
       say(room, 'correct', `${me.name} got it!`, { name: me.name });
       maybeEarlyEnd(room); touch(room);
       return { result: 'correct', points, word: room.word.word };
     }
+    me.react = { k: 'confused', at: now };                          // wrong or close: the avatar looks puzzled for a moment
     if (verdict === 'close') { say(room, 'close', 'So close! Keep going.', { vis: b.pid }); say(room, 'guess', text, { name: me.name, vis: 'all' }); touch(room); return { result: 'close' }; }
     say(room, 'guess', text, { name: me.name, vis: 'all' }); touch(room); return { result: 'wrong' };
   },
@@ -281,7 +293,7 @@ const routes = {
   'POST /api/again': async (b) => {
     const room = getRoom(b.code, b.pid); hostOnly(room, b.pid);
     if (room.phase !== 'gameover') throw httpErr(400, 'The game isn\'t over yet.');
-    for (const p of Object.values(room.players)) p.score = 0;
+    for (const p of Object.values(room.players)) { p.score = 0; p.ready = false; p.react = null; }
     room.phase = 'lobby'; room.round = 0; room.queue = []; room.final = null; room.chat = []; touch(room); return { ok: true };
   },
 };
@@ -319,7 +331,7 @@ async function handle(req) {
 }
 
 const PUBLIC = path.join(__dirname, 'public');
-const STATIC = { '/': ['index.html', 'text/html; charset=utf-8'], '/index.html': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
+const STATIC = { '/': ['index.html', 'text/html; charset=utf-8'], '/index.html': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/avatar.js': ['avatar.js', 'text/javascript; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');

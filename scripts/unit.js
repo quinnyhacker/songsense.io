@@ -33,6 +33,20 @@ eq(guessPoints(90000, 0, 1), 100, 'last-second guess on song 1 = 100');
 eq(guessPoints(90000, 90000, 3) < guessPoints(90000, 90000, 1), true, 'later songs are worth less');
 eq(guessPoints(90000, 45000, 1) > guessPoints(90000, 20000, 1), true, 'sooner is worth more');
 eq(pickerPoints(400), 100, 'picker earns a quarter');
+console.log('Avatars');
+const Avatar = require('../public/avatar.js');
+eq(Avatar.valid(Avatar.DEFAULT), true, 'default avatar is valid');
+eq(Avatar.valid({ ...Avatar.DEFAULT, hair: 99 }), false, 'out-of-range option rejected');
+eq(Avatar.valid({ ...Avatar.DEFAULT, hair: '3' }), false, 'non-integer option rejected');
+eq(Avatar.valid({ ...Avatar.DEFAULT, extra: 1 }), false, 'unknown field rejected');
+eq(Avatar.valid(null) || Avatar.valid('x'), false, 'non-objects rejected');
+eq(JSON.stringify(Avatar.fromName('Maya')) === JSON.stringify(Avatar.fromName('Maya')), true, 'name-based default is stable');
+let bad = 0;
+for (const k of Object.keys(Avatar.SCHEMA)) for (let i = 0; i < Avatar.SCHEMA[k]; i++) { const s = Avatar.svg({ ...Avatar.DEFAULT, [k]: i }); if (!(s.startsWith('<svg') && s.endsWith('</svg>')) || /undefined|NaN/.test(s)) bad++; }
+eq(bad, 0, 'every option of every layer renders clean SVG');
+bad = 0; for (let e = 0; e < 7; e++) { const s = Avatar.svg(Avatar.random(), { expr: e }); if (/undefined|NaN/.test(s)) bad++; }
+eq(bad, 0, 'all 7 expressions render for random avatars');
+eq(Avatar.svg({ ...Avatar.DEFAULT }, { label: '<script>' }).includes('<script>'), false, 'labels are sanitised');
 console.log('Words');
 for (const [k, v] of Object.entries(words.CATEGORIES)) eq(v.length >= 150, true, `${k} has ${v.length} words`);
 eq(Object.values(words.CATEGORIES).flat().every((w) => w.word.length >= 3 && w.word.length <= 30), true, 'word lengths are sane');
