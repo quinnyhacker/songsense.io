@@ -13,6 +13,7 @@ async function call(method, p, body, raw) {
   const text = await r.text(); let j = {}; try { j = JSON.parse(text); } catch { /* not json */ } return { s: r.status, j, text, headers: r.headers };
 }
 const post = (p, b) => call('POST', '/api/' + p, b);
+const call2 = (method, p, tok, body) => fetch(BASE + p, { method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify(body || {}) }).then(async (r) => ({ s: r.status, j: await r.json().catch(() => ({})) }));
 const state = (code, pid) => call('GET', `/api/state?code=${code}&pid=${pid}&v=0`).then((r) => r.j);
 const waitFor = async (fn, ms = 15000) => { const end = Date.now() + ms; for (;;) { const v = await fn(); if (v) return v; if (Date.now() > end) return null; await sleep(120); } };
 const TRACKS = ['4cOdK2wGLETKBW3PvgPWqT', '7ouMYWpwJ422jRcDASZB7P', '3AJwUDP919kvQ9QcozQPxg', '0VjIjW4GlUZAMYd2vXMi3b'];
@@ -20,7 +21,7 @@ const TRACKS = ['4cOdK2wGLETKBW3PvgPWqT', '7ouMYWpwJ422jRcDASZB7P', '3AJwUDP919k
 (async () => {
   if (!BASE) {
     const port = 3300 + Math.floor(Math.random() * 500); BASE = `http://localhost:${port}`;
-    child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], { env: { ...process.env, PORT: String(port), SPEED: '0.1', TRUST_PROXY: '0', SPOTIFY_CLIENT_ID: '', SPOTIFY_CLIENT_SECRET: '' }, stdio: ['ignore', 'inherit', 'inherit'] });
+    child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], { env: { ...process.env, PORT: String(port), SPEED: '0.1', TRUST_PROXY: '0', DATA_DIR: require('os').tmpdir() + '/songsense-e2e-' + Date.now(), SPOTIFY_CLIENT_ID: '', SPOTIFY_CLIENT_SECRET: '' }, stdio: ['ignore', 'inherit', 'inherit'] });
     await waitFor(async () => { try { return (await fetch(BASE + '/healthz')).ok; } catch { return false; } }, 8000);
   }
 
@@ -181,6 +182,57 @@ const TRACKS = ['4cOdK2wGLETKBW3PvgPWqT', '7ouMYWpwJ422jRcDASZB7P', '3AJwUDP919k
   ok((await post('again', { code, pid: Object.values(P).find((p) => p !== hostNow && p !== picker4) })).s === 403, 'only the host can restart');
   ok((await post('again', { code, pid: hostNow })).s === 200, 'host plays again');
   s = await state(code, hostNow); ok(s.phase === 'lobby' && s.players.every((p) => p.score === 0), 'back to the lobby with scores reset');
+
+  console.log('Profiles, coins and the shop');
+  const Shop = require('../public/shop-data.js');
+  const authed = (tok) => (m, p, b) => fetch(BASE + p, { method: m, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: b ? JSON.stringify(b) : undefined }).then(async (r) => ({ s: r.status, j: await r.json().catch(() => ({})) }));
+  ok((await post('signup', { username: 'ab', pin: '1234' })).s === 400, 'short usernames rejected');
+  ok((await post('signup', { username: 'Alice', pin: '12' })).s === 400 && (await post('signup', { username: 'Alice', pin: 'abcd' })).s === 400, 'PIN must be exactly 4 digits');
+  const su = await post('signup', { username: 'Alice', pin: '1234', avatar: Avatar.DEFAULT }); ok(su.s === 200 && su.j.token && su.j.user.coins === Shop.STARTER_COINS, 'signup works and gives starter coins');
+  ok(!JSON.stringify(su.j).includes('1234') && !('hash' in su.j.user) && !('salt' in su.j.user), 'responses never contain the PIN, hash or salt');
+  ok((await post('signup', { username: 'alice', pin: '9999' })).s === 400, 'usernames are unique, case-insensitive');
+  const A1 = authed(su.j.token); ok((await A1('GET', '/api/me')).j.user.username === 'Alice', 'token identifies the profile');
+  ok((await call('GET', '/api/me')).s === 401, 'no token, no profile');
+  ok((await post('login', { username: 'alice', pin: '1234' })).s === 200, 'login with the right PIN works');
+  ok((await post('login', { username: 'nobody', pin: '1234' })).j.error === (await post('login', { username: 'alice', pin: '0000' })).j.error, 'wrong user and wrong PIN give the same message');
+  for (let i = 0; i < 4; i++) await post('login', { username: 'alice', pin: '0000' });
+  ok((await post('login', { username: 'alice', pin: '1234' })).s === 429, 'five wrong PINs lock the username, even for the right PIN');
+  const bob = (await post('signup', { username: 'Bob', pin: '4321' })).j, B1 = authed(bob.token);
+  ok((await B1('POST', '/api/shop/buy', { id: 'acc:11' })).s === 402, 'cannot buy what you cannot afford');
+  ok((await B1('POST', '/api/shop/buy', { id: 'nope:1' })).s === 404, 'unknown items are not for sale');
+  ok((await B1('POST', '/api/profile/avatar', { avatar: { ...Avatar.DEFAULT, acc: 11 } })).s === 400, 'cannot save an avatar with an item you do not own');
+  const cheap = Shop.ITEMS.find((i) => i.kind === 'avatar' && i.price <= 300 && i.group === 'hair');
+  const bought = await B1('POST', '/api/shop/buy', { id: cheap.id }); ok(bought.s === 200 && bought.j.user.coins === Shop.STARTER_COINS - cheap.price && bought.j.user.owned.includes(cheap.id), 'buying deducts coins and grants the item');
+  ok((await B1('POST', '/api/shop/buy', { id: cheap.id })).s === 400, 'cannot buy the same item twice');
+  ok((await B1('POST', '/api/profile/avatar', { avatar: { ...Avatar.DEFAULT, [cheap.field]: cheap.value } })).s === 200, 'an owned item can be worn');
+  ok((await B1('POST', '/api/profile/equip', { slot: 'frame', id: 'frame:gold' })).s === 403, 'cannot equip flair you do not own');
+  ok((await B1('POST', '/api/profile/equip', { slot: 'title', id: 'frame:gold' })).s === 400, 'flair must fit its slot');
+  const gu = (await post('create', { name: 'Guesty', avatar: { ...Avatar.DEFAULT, acc: 11 } })).j;
+  ok((await state(gu.code, gu.pid)).players[0].avatar === null, 'a guest cannot appear wearing a paid item');
+  ok((await post('avatar', { code: gu.code, pid: gu.pid, avatar: { ...Avatar.DEFAULT, acc: 11 } })).s === 400, 'guests cannot switch to a paid item in a room either');
+  const ar = (await call2('POST', '/api/create', bob.token, { name: 'ignored-name' })).j; const sr = await state(ar.code, ar.pid);
+  ok(sr.players[0].name === 'Bob' && sr.players[0].signed === true && sr.players[0].avatar[cheap.field] === cheap.value, 'signed-in players use their profile name and saved look');
+  ok((await call2('POST', '/api/join', su.j.token, { code: ar.code, name: 'x' })).s === 200, 'a second profile joins the same room');
+  ok((await call2('POST', '/api/join', su.j.token, { code: ar.code, name: 'x' })).s === 400, 'one profile cannot join the same room twice');
+
+  console.log('Coins from a finished game');
+  const before = (await B1('GET', '/api/me')).j.user.coins;
+  const room2 = (await call2('POST', '/api/create', bob.token, {})).j, carl = (await post('signup', { username: 'Carl', pin: '1111' })).j, C1 = authed(carl.token);
+  const cj = (await call2('POST', '/api/join', carl.token, { code: room2.code })).j;
+  await post('start', { code: room2.code, pid: room2.pid });
+  for (let r = 0; r < 2; r++) {
+    const st = await waitFor(async () => { const x = await state(room2.code, room2.pid); return (x.phase === 'choosing' || x.phase === 'gameover') && x; }, 12000); if (!st || st.phase === 'gameover') break;
+    const pk = st.pickerId, ot = pk === room2.pid ? cj.pid : room2.pid;
+    await post('choose', { code: room2.code, pid: pk, index: 0 }); await post('song', { code: room2.code, pid: pk, trackId: TRACKS[0] });
+    const w = (await state(room2.code, pk)).word; await sleep(300); await post('guess', { code: room2.code, pid: ot, text: w });
+    await waitFor(async () => (await state(room2.code, room2.pid)).phase !== 'playing', 8000);
+  }
+  const fin = await waitFor(async () => { const x = await state(room2.code, room2.pid); return x.phase === 'gameover' && x; }, 20000);
+  const bobAfter = (await B1('GET', '/api/me')).j.user, carlAfter = (await C1('GET', '/api/me')).j.user;
+  ok(fin && fin.earned > 0 && bobAfter.coins === before + fin.earned, 'points are paid out as coins when the game ends (exactly once)');
+  ok(bobAfter.stats.games === 1 && carlAfter.stats.games === 1 && bobAfter.stats.wins + carlAfter.stats.wins >= 1, 'games and wins are counted');
+  await sleep(600); ok((await B1('GET', '/api/me')).j.user.coins === bobAfter.coins, 'no double payout on later polls');
+  ok((await authed(su.j.token)('POST', '/api/logout')).s === 200 && (await authed(su.j.token)('GET', '/api/me')).s === 401, 'logging out invalidates the token');
 
   console.log('Robustness');
   ok((await call('POST', '/api/create', null, '{not json')).s === 400, 'malformed JSON rejected');

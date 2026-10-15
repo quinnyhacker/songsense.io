@@ -11,6 +11,10 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22
+      # Profiles and coins are saved in DATA_DIR/profiles.json. Without a persistent disk this folder is wiped on every deploy and restart,
+      # so profiles and coins reset. To keep them: add a Render Disk (about $0.25/month) mounted at /var/data and uncomment the next two lines.
+      # - key: DATA_DIR
+      #   value: /var/data
       # Optional Spotify search. Enter these in the Render dashboard (Environment tab), never in this file.
       # Without them pickers paste a Spotify song link instead.
       - key: SPOTIFY_CLIENT_ID

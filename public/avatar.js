@@ -5,13 +5,14 @@
 // An avatar is a small structured config of option indexes, e.g. { skin:2, hair:3, ... }, so it can be saved,
 // sent to the server (which validates it with the same SCHEMA) and recreated identically everywhere.
 (function (root) {
+  const Shop = (typeof module !== 'undefined' && module.exports) ? require('./shop-data.js') : root.Shop;   // which items are free vs paid
   const INK = '#2a2140';
   const SKIN = ['#fde3cf', '#f8cfb0', '#efb98f', '#d9a077', '#b9744a', '#8d5530', '#6a3d24', '#4b2a1a'];
-  const HAIR_COLORS = ['#2b2433', '#6b4430', '#a0623a', '#e8c36a', '#d9703a', '#f08bb5', '#b8a5e8', '#5fa3e8', '#7fdcc0', '#e6e9f2'];
+  const HAIR_COLORS = ['#2b2433', '#6b4430', '#a0623a', '#e8c36a', '#d9703a', '#f08bb5', '#b8a5e8', '#5fa3e8', '#7fdcc0', '#e6e9f2', '#f5c542', '#5b3fa8'];
   const EYE_COLORS = ['#6b3d22', '#3a8dcc', '#3aa26b', '#8b5fd0', '#d99a2b', '#7a8594', '#e0609a', '#2ab3b3'];
   const CLOTH_COLORS = ['#203c61', '#3a8dcc', '#70b8f0', '#b8a5e8', '#a9e5d0', '#d95353', '#f0c34a', '#f08bb5', '#f4faff', '#3a3a48'];
   const NAMES = {
-    hair: ['Messy', 'Spiky', 'Fluffy bob', 'Medium', 'Medium wavy', 'Long', 'Long wavy', 'Twin tails'],
+    hair: ['Messy', 'Spiky', 'Fluffy bob', 'Medium', 'Medium wavy', 'Long', 'Long wavy', 'Twin tails', 'Bun', 'Ponytail', 'Short pigtails'],
     bangs: ['No bangs', 'Straight', 'Side swept', 'Parted'],
     eyes: ['Round', 'Tall', 'Sleepy', 'Sparkly', 'Cat', 'Dots'],
     brows: ['Thin', 'Thick', 'Arched', 'Flat'],
@@ -19,8 +20,8 @@
     blush: ['None', 'Light', 'Rosy'],
     freckles: ['None', 'Freckles'],
     mark: ['None', 'Whiskers', 'Star', 'Gem', 'Tear mark'],
-    clothes: ['T-shirt', 'Hoodie', 'Collared', 'Sweater', 'Jacket', 'Scarf'],
-    acc: ['None', 'Headphones', 'Earbuds', 'Glasses', 'Beanie', 'Hair clips', 'Bow', 'Music note'],
+    clothes: ['T-shirt', 'Hoodie', 'Collared', 'Sweater', 'Jacket', 'Scarf', 'Tuxedo', 'Sailor', 'Puffer vest'],
+    acc: ['None', 'Headphones', 'Earbuds', 'Glasses', 'Beanie', 'Hair clips', 'Bow', 'Music note', 'Sunglasses', 'Cat ears', 'Baseball cap', 'Golden crown', 'Top hat', 'Halo', 'Bunny ears', 'Flower crown'],
   };
   const EXPR = { happy: 0, neutral: 1, excited: 2, confused: 3, sad: 4, angry: 5, smug: 6 };
   // number of choices per field (the server validates against this exact table)
@@ -35,7 +36,17 @@
   function valid(cfg) { return !!cfg && typeof cfg === 'object' && Object.keys(SCHEMA).every((k) => Number.isInteger(cfg[k]) && cfg[k] >= 0 && cfg[k] < SCHEMA[k]) && Object.keys(cfg).length === Object.keys(SCHEMA).length; }
   function hashSeed(s) { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
   function rng(seed) { let a = seed >>> 0 || 1; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-  function random(rand) { rand = rand || Math.random; const out = {}; for (const k of Object.keys(SCHEMA)) out[k] = Math.floor(rand() * SCHEMA[k]); out.acc = rand() < 0.35 ? 0 : out.acc; out.freckles = rand() < 0.7 ? 0 : 1; out.mark = rand() < 0.6 ? 0 : out.mark; out.bangs = out.bangs; return out; }
+  function random(rand, allow) {          // allow(field, value) -> bool; default: only free items
+    rand = rand || Math.random; allow = allow || ((f, v) => Shop.isFree(f, v)); const out = {};
+    for (const k of Object.keys(SCHEMA)) { const ok = []; for (let i = 0; i < SCHEMA[k]; i++) if (allow(k, i)) ok.push(i); out[k] = ok.length ? ok[Math.floor(rand() * ok.length)] : 0; }
+    out.acc = rand() < 0.35 ? 0 : out.acc; out.freckles = rand() < 0.7 ? 0 : 1; out.mark = rand() < 0.6 || !allow('mark', out.mark) ? 0 : out.mark; return out;
+  }
+  // replace any paid item the player does not own with a free one (used when restoring saved looks)
+  function sanitize(cfg, owned) {
+    const have = owned instanceof Set ? owned : new Set(owned || []), out = normalize(cfg);
+    for (const k of Object.keys(SCHEMA)) if (!Shop.isFree(k, out[k]) && !have.has(Shop.itemId(k, out[k]))) { let v = DEFAULT[k]; if (!Shop.isFree(k, v)) { v = 0; while (v < SCHEMA[k] && !Shop.isFree(k, v)) v++; } out[k] = v; }
+    return out;
+  }
   const fromName = (name) => random(rng(hashSeed(name || 'player')));   // stable default for players who have not made one
 
   function shade(hex, f) {          // f < 0 darkens, f > 0 lightens
@@ -57,12 +68,16 @@
     'M17 40 C13 16 32 6 50 6 C68 6 87 16 83 40 C92 56 80 64 90 78 C94 88 86 94 90 98 L10 98 C14 94 6 88 10 78 C20 64 8 56 17 40Z',
     'M22 40 C20 16 34 8 50 8 C66 8 80 16 78 40 L76 52 L24 52Z M24 44 C8 48 4 74 12 92 C22 88 26 68 30 56Z M76 44 C92 48 96 74 88 92 C78 88 74 68 70 56Z',
   ];
+  BACK[8] = BACK[0];
+  BACK[9] = BACK[0] + 'M72 26 C92 22 98 52 88 80 C84 70 82 58 76 46Z';
+  BACK[10] = BACK[0] + 'M22 46 C10 50 8 66 14 76 C20 72 24 62 28 54Z M78 46 C90 50 92 66 86 76 C80 72 76 62 72 54Z';
   /* ---- layer: front hair = cap over the crown + optional extras (spikes, tufts) ---- */
   const CAP = 'M22 40 C20 20 34 10 50 10 C66 10 80 20 78 40 C72 28 62 23 50 23 C38 23 28 28 22 40Z';
   const EXTRA = [
     'M23 32 L27 16 L35 25 L42 11 L50 22 L58 11 L65 25 L73 16 L77 32 C70 24 60 20 50 20 C40 20 30 24 23 32Z',
     'M22 34 L15 14 L31 24 L36 3 L46 20 L54 1 L62 20 L72 5 L72 24 L87 13 L78 34 C70 24 60 20 50 20 C40 20 30 24 22 34Z',
   ];
+  EXTRA[8] = 'M41.5 9 a8.5 8.5 0 1 0 17 0 a8.5 8.5 0 1 0 -17 0Z';        // top bun
   const BANGS = [
     '',
     'M22 40 C20 18 34 10 50 10 C66 10 80 18 78 40 L76 33 L24 33Z',
@@ -81,6 +96,9 @@
       case 2: return base + neck('M42 66 L58 66 L50 90Z') + P('M41 74 L50 90 L36 86Z', '#fff') + P('M59 74 L50 90 L64 86Z', '#fff');                  // collared shirt
       case 3: return base + neck('M43 66 L57 66 L57 72Z') + P('M37 66 L63 66 L65 82 L35 82Z', col) + L('M39 70 L61 70 M38 74 L62 74 M37 78 L63 78', 1.1, dk);   // sweater (turtle)
       case 4: return base + neck('M42 66 L58 66 L50 92Z') + P('M42 76 L58 76 L50 94Z', '#f4faff') + P('M37 76 L48 96 L33 92Z', dk) + P('M63 76 L52 96 L67 92Z', dk);   // jacket
+      case 6: return P(SHOULDERS, '#2b2b3a') + neck('M42 66 L58 66 L50 90Z') + P('M41 75 L50 92 L59 75 L56 72 L50 82 L44 72Z', '#fff') + P('M34 78 L48 96 L30 92Z', '#3d3d50') + P('M66 78 L52 96 L70 92Z', '#3d3d50') + P('M50 82 L43 78 L43 87Z', '#d9423a') + P('M50 82 L57 78 L57 87Z', '#d9423a') + '<circle cx="50" cy="82" r="2.2" fill="#a52a22"/>';   // tuxedo
+      case 7: return P(SHOULDERS, '#f4faff') + neck('M42 66 L58 66 L50 86Z') + P('M34 72 L50 90 L66 72 L74 84 L50 98 L26 84Z', col) + L('M33 79 L49 93 M67 79 L51 93', 1.6, '#fff') + P('M50 88 L44 98 L56 98Z', '#d9423a');   // sailor uniform
+      case 8: return base + neck('M43 66 L57 66 L57 74 C54 84 46 84 43 74Z') + P('M8 100 C8 90 20 83 36 80 L38 100Z', dk) + P('M92 100 C92 90 80 83 64 80 L62 100Z', dk) + L('M12 94 L37 90 M10 100 L38 96 M88 94 L63 90 M90 100 L62 96', 1.2, shade(dk, 0.3));   // puffer vest
       default: return base + neck('M42 66 L58 66 L58 78 L42 78Z') + P('M33 72 C40 84 60 84 67 72 L69 80 C60 92 40 92 31 80Z', dk) + P('M53 84 L63 99 L51 99 L47 88Z', col) + L('M51 94 L58 94', 1.6, '#fff');   // scarf
     }
   }
@@ -152,6 +170,14 @@
       case 5: return P('M24 24 L38 21 L39.5 25 L25.5 28Z', col) + P('M23 30 L37 27 L38.5 31 L24.5 34Z', dk);
       case 6: return P('M71 20 L56 11 L56 29Z', col) + P('M71 20 L86 11 L86 29Z', col) + `<circle cx="71" cy="20" r="3.4" fill="${dk}" stroke="${INK}" stroke-width="1.4"/>`;
       case 7: return `<g transform="translate(66 14) scale(1.05)"><ellipse cx="2.5" cy="14" rx="4.2" ry="3.2" fill="${col}" stroke="${INK}" stroke-width="1.4"/><path d="M6.4 14 V1" stroke="${INK}" stroke-width="1.8" fill="none" stroke-linecap="round"/><path d="M6.4 1 Q12 2 12 8" fill="none" stroke="${INK}" stroke-width="1.8" stroke-linecap="round"/></g>`;
+      case 8: return `<path d="M26 41 h22 v8 q0 6 -6 6 h-10 q-6 0 -6 -6z" fill="#1d1d2b" stroke="${INK}" stroke-width="1.6"/><path d="M52 41 h22 v8 q0 6 -6 6 h-10 q-6 0 -6 -6z" fill="#1d1d2b" stroke="${INK}" stroke-width="1.6"/>` + L('M48 44 Q50 42 52 44 M26 43 L22 41 M74 43 L78 41', 1.8) + L('M30 44 L34 44 M56 44 L60 44', 1.4, '#7f93b8');
+      case 9: return P('M22 30 L24 4 L42 18Z', col) + P('M78 30 L76 4 L58 18Z', col) + P('M27 22 L28 11 L36 17Z', '#ffb3c6') + P('M73 22 L72 11 L64 17Z', '#ffb3c6');
+      case 10: return P('M23 33 C23 6 77 6 77 33Z', col) + P('M20 31 Q50 42 80 31 L80 27 Q50 36 20 27Z', dk) + `<circle cx="50" cy="8.5" r="2.4" fill="${dk}" stroke="${INK}" stroke-width="1.2"/>`;
+      case 11: return P('M25 24 L29 5 L40 15 L50 2 L60 15 L71 5 L75 24Z', '#f5c542') + P('M25 24 H75 V29 H25Z', '#e0a81c') + '<circle cx="29" cy="6" r="2.2" fill="#ff5c7a"/><circle cx="50" cy="3.5" r="2.4" fill="#5fa3e8"/><circle cx="71" cy="6" r="2.2" fill="#ff5c7a"/><circle cx="38" cy="26.5" r="1.4" fill="#fff6c4"/><circle cx="62" cy="26.5" r="1.4" fill="#fff6c4"/>';
+      case 12: return P('M33 22 L35 3 L65 3 L67 22Z', '#2b2b3a') + P('M33.4 17 L66.6 17 L67 22 L33 22Z', col) + P('M22 23 Q50 29 78 23 Q50 17 22 23Z', '#2b2b3a');
+      case 13: return '<ellipse cx="50" cy="7" rx="17" ry="4.5" fill="none" stroke="#f5c542" stroke-width="3.2"/><ellipse cx="50" cy="6" rx="17" ry="4.5" fill="none" stroke="#fff6c4" stroke-width="1" opacity=".85"/>';
+      case 14: return `<ellipse cx="33" cy="10" rx="5" ry="11.5" transform="rotate(-18 33 10)" fill="${col}" stroke="${INK}" stroke-width="1.5"/><ellipse cx="33" cy="10.5" rx="2.4" ry="7" transform="rotate(-18 33 10)" fill="#ffb3c6"/><ellipse cx="67" cy="10" rx="5" ry="11.5" transform="rotate(18 67 10)" fill="${col}" stroke="${INK}" stroke-width="1.5"/><ellipse cx="67" cy="10.5" rx="2.4" ry="7" transform="rotate(18 67 10)" fill="#ffb3c6"/>`;
+      case 15: return L('M24 28 Q50 12 76 28', 2.4, '#4fae6b') + [[28, 25, '#ff8fb1'], [39, 19, '#fff'], [50, 16.5, '#ffd166'], [61, 19, '#fff'], [72, 25, '#ff8fb1']].map((f) => `<circle cx="${f[0]}" cy="${f[1]}" r="4.3" fill="${f[2]}" stroke="${INK}" stroke-width="1.1"/><circle cx="${f[0]}" cy="${f[1]}" r="1.5" fill="#ffd54a"/>`).join('');
       default: return '';
     }
   }
@@ -173,6 +199,6 @@
     return out + '</svg>';
   }
 
-  const api = { SCHEMA, DEFAULT, NAMES, EXPR, SKIN, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, normalize, valid, random, fromName, svg, rng, hashSeed };
+  const api = { sanitize, SCHEMA, DEFAULT, NAMES, EXPR, SKIN, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, normalize, valid, random, fromName, svg, rng, hashSeed };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Avatar = api;
 })(typeof self !== 'undefined' ? self : this);

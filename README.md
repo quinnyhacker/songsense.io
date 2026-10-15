@@ -12,6 +12,14 @@ The interface is a bright "Aero" glass-window theme (design tokens and component
 * The config is saved in the browser (`localStorage`), sent when you join or edit, and shown in the lobby, player list and results. Invalid configs are ignored (the client shows a stable default made from the name).
 * Avatars react: excited when you guess right or the picker is winning, confused after a wrong guess (a few seconds), happy or sad on the results and final screens. Players also toggle **Ready** in the lobby (the host can start anyway).
 
+## Profiles, coins and Alena's shop
+
+* **Profiles** are optional: a username and a **4-digit PIN** (hashed with scrypt and a per-user salt, never stored in plain text; 5 wrong PINs lock the username for 15 minutes; sign-in tokens are stored hashed). A 4-digit PIN is weak by nature, which is why players are told not to reuse one. New profiles start with 500 coins (`STARTER_COINS` to change).
+* **Coins** come from points: when a game ends, every signed-in player gets their score as coins, plus 50 for finishing and 100 for winning (leaving early keeps the points already earned). Coins are only ever added by the server and spending never changes scoring.
+* **The shop** (Alena, with her shih tzu Teddy) sells locked avatar items (hair styles, hats, accessories, clothes, special colors, eyes and face marks), profile frames, name colors, titles and reaction effects (shown around your avatar when you guess right). Prices live in `public/shop-data.js`; anything not listed there is free for everyone. The server enforces ownership: a guest or a player who hasn't bought an item can't appear wearing it. The Avatar Maker lets you try locked items on; saving needs the items to be owned.
+* **Storage**: profiles are saved to `DATA_DIR/profiles.json` (default `./data`, git-ignored). **On Render without a persistent disk this folder is wiped on every deploy and restart, so profiles and coins reset.** To keep them, add a Render Disk and set `DATA_DIR` to its mount path (see `render.yaml`). Backing up that one file backs up everything.
+* Known limits: anyone can make a second profile and play against themselves to farm coins; there is no password reset (a forgotten PIN means a new profile); usernames aren't filtered for bad words.
+
 ## How a game works
 
 1. The host creates a game and shares the invite link or 4-letter code. Up to 12 players. The host chooses word categories, guessing time (60/90/120 s) and turns each (1 to 3).

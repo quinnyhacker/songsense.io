@@ -206,7 +206,7 @@
   .frame { width:100%; max-width:220px; aspect-ratio:1; border-radius:10px; padding:8px; background:linear-gradient(145deg,#fff,#cfe4f6 45%,#9ec9ec); border:1px solid var(--win-border); box-shadow:var(--shadow), inset 0 0 0 1px #fff; position:relative; }
   .frame::after { content:""; position:absolute; inset:8px; border-radius:6px; pointer-events:none; background:linear-gradient(160deg,rgba(255,255,255,.55) 0%,rgba(255,255,255,0) 40%); }
   .frame .scene { width:100%; height:100%; border-radius:6px; overflow:hidden; background:radial-gradient(circle at 50% 30%,#fff,#d6ebfb 60%,#aad3f3); } .frame .avatar-svg { width:100%; height:100%; display:block; }
-  .cw-opts { display:flex; flex-direction:column; min-height:0; }
+  .cw-opts { display:flex; flex-direction:column; min-height:0; min-width:0; } .pane { min-width:0; }
   .tabs { display:flex; gap:2px; padding:8px 8px 0; background:linear-gradient(180deg,#d8eafa,#bcd8f0); border-bottom:1px solid var(--win-border); overflow-x:auto; scrollbar-width:none; }
   .tab { padding:7px 14px; border:1px solid var(--win-border); border-bottom:0; border-radius:5px 5px 0 0; background:linear-gradient(180deg,#f4faff,#cfe3f5); color:var(--navy); font-weight:600; font-size:var(--t-sm); white-space:nowrap; margin-bottom:-1px; }
   .tab:hover { background:linear-gradient(180deg,#fff,#dff0ff); } .tab[aria-selected=true] { background:#fff; color:var(--aero-dk); box-shadow:inset 0 3px 0 var(--sky); }
@@ -234,6 +234,43 @@
   .intro-skip { position:absolute; top:max(14px,env(safe-area-inset-top)); right:14px; padding:6px 14px; border-radius:var(--r); border:1px solid var(--win-border); background:linear-gradient(180deg,#fff,#cfe4f6); color:var(--navy); font-weight:600; font-size:var(--t-sm); }
   .intro-skip:hover { box-shadow:0 0 0 2px rgba(112,184,240,.6); }
 
+
+  /* ---------- profiles, coins, flair ---------- */
+  .coin { width:18px; height:18px; vertical-align:-4px; } .coins { display:inline-flex; align-items:center; gap:5px; padding:2px 10px 2px 6px; border-radius:99px; border:1px solid #b8860b; background:linear-gradient(180deg,#fff7d6,#ffe08a); color:#5a3b00; font-weight:700; box-shadow:inset 0 1px 0 #fff; }
+  .acct { display:flex; align-items:center; justify-content:space-between; gap:var(--s2); flex-wrap:wrap; margin-bottom:var(--s3); padding:var(--s2) var(--s3); border-radius:var(--r); background:rgba(255,255,255,.6); border:1px solid var(--line); font-size:var(--t-sm); }
+  .ptitle { display:block; font-size:var(--t-xs); font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--aero-dk); } .ptitle.sm { font-size:11px; line-height:1.2; }
+  .pname { font-size:var(--t-xl); font-weight:800; } .pfav { padding:8px 0 2px; }
+  .nc-rose { color:#d4467a; } .nc-mint { color:#1f9e78; } .nc-violet { color:#7a55d8; }
+  .nc-gold { background:linear-gradient(90deg,#b8860b,#f5c542,#b8860b); -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-fill-color:transparent; }
+  .nc-rainbow { background:linear-gradient(90deg,#ff595e,#ffca3a,#8ac926,#1982c4,#6a4c93,#ff595e); background-size:200% 100%; -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-fill-color:transparent; animation:nameflow 4s linear infinite; } @keyframes nameflow { to { background-position:200% 0; } }
+  .av[data-frame]::before { content:""; position:absolute; inset:-5px; border-radius:50%; padding:3px; background:var(--frame); -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude; pointer-events:none; z-index:2; }
+  .av[data-frame=gold] { --frame:linear-gradient(135deg,#fff3b0,#f5c542 40%,#b8860b 60%,#ffe68a); } .av[data-frame=pixel] { --frame:repeating-conic-gradient(#2b2b3a 0 12deg,#f4faff 12deg 24deg); } .av[data-frame=ice] { --frame:linear-gradient(135deg,#fff,#a8dcff 50%,#e8f8ff); }
+  .av[data-frame=neon] { --frame:linear-gradient(135deg,#00f0ff,#ff2bd6); } .av[data-frame=neon]::before { filter:drop-shadow(0 0 4px #19f); }
+  .av[data-frame=rainbow] { --frame:conic-gradient(#ff595e,#ffca3a,#8ac926,#1982c4,#6a4c93,#ff595e); } .av[data-frame=rainbow]::before, .av[data-frame=flame]::before { animation:spin 5s linear infinite; } @keyframes spin { to { transform:rotate(360deg); } }
+  .av[data-frame=flame] { --frame:conic-gradient(#ff3b1d,#ff9f1c,#ffe66d,#ff9f1c,#ff3b1d); } .av[data-frame=flame]::before { filter:drop-shadow(0 0 5px #ff7a1d); }
+  .fx { position:absolute; inset:0; pointer-events:none; z-index:3; } .fx i { position:absolute; left:50%; top:50%; font-style:normal; font-size:calc(var(--sz) * .26); line-height:1; opacity:0; animation:fxout 1.7s ease-out both; animation-delay:var(--d); }
+  .fx-sparkles i { color:#ffd54a; text-shadow:0 0 6px #fff3b0; } .fx-hearts i { color:#ff5c8a; } .fx-stars i { color:#fff3b0; text-shadow:0 0 6px #ffd54a; animation-name:fxout, none; }
+  .fx-confetti i:nth-child(4n+1) { color:#ff595e; } .fx-confetti i:nth-child(4n+2) { color:#ffca3a; } .fx-confetti i:nth-child(4n+3) { color:#4aa6ec; } .fx-confetti i:nth-child(4n) { color:#8ac926; }
+  @keyframes fxout { 0% { opacity:0; transform:translate(-50%,-50%) rotate(var(--a)) translateY(calc(var(--sz) * -.3)) scale(.3); } 20% { opacity:1; } 100% { opacity:0; transform:translate(-50%,-50%) rotate(var(--a)) translateY(calc(var(--sz) * -.95)) scale(1.1) rotate(180deg); } }
+  .oth.locked, .sw.locked { position:relative; } .oth.locked svg.avatar-svg { filter:saturate(.7) brightness(.97); } .lk { position:absolute; right:3px; top:3px; display:inline-flex; align-items:center; gap:2px; padding:1px 5px; border-radius:99px; background:rgba(32,60,97,.86); color:#ffe08a; font-size:10px; font-weight:700; }
+  .sw.locked { display:grid; place-items:center; color:rgba(255,255,255,.95); } .sw.locked svg { filter:drop-shadow(0 0 2px rgba(0,0,0,.7)); }
+  .cw-note { font-size:var(--t-xs); color:var(--mute); align-self:center; text-align:right; } .linkbtn { background:none; border:0; padding:0; color:var(--aero-dk); text-decoration:underline; font:inherit; font-weight:600; cursor:pointer; }
+  .pgrid { grid-template-columns:240px minmax(0,1fr); }
+  .cw.wide { width:min(980px,100%); }
+  /* shop */
+  .shopgrid { grid-template-columns:300px minmax(0,1fr); } .shopscene { background:linear-gradient(180deg,#fdf1ff,#dff3ff 55%,#c9f0e0); justify-content:flex-start; }
+  .scene2 { position:relative; width:100%; height:200px; border-radius:10px; background:linear-gradient(180deg,#fff 0%,#eaf6ff 60%,#c9e6fb 100%); border:1px solid var(--win-border); box-shadow:inset 0 -26px 0 #d6b98c, inset 0 -27px 0 #b89463; overflow:hidden; }
+  .scene2::before { content:""; position:absolute; left:10px; right:10px; top:14px; height:6px; border-radius:3px; background:#d6b98c; box-shadow:0 0 0 1px #b89463; }
+  .alena { position:absolute; left:10px; bottom:26px; width:146px; height:146px; } .alena .avatar-svg { width:100%; height:100%; display:block; animation:bob 2.6s ease-in-out infinite; }
+  .teddy { position:absolute; right:12px; bottom:22px; width:92px; height:92px; background:none; border:0; padding:0; border-radius:50%; } .teddy:hover { transform:rotate(-4deg) scale(1.04); } .teddy svg { width:100%; height:100%; display:block; animation:bob 1.8s ease-in-out infinite; }
+  .dlg.static { cursor:default; min-height:5.6em; padding:12px 14px; font-size:var(--t-md); }
+  .shopcards { display:grid; grid-template-columns:repeat(auto-fill,minmax(128px,1fr)); gap:10px; }
+  .si { border-radius:8px; padding:6px; text-align:center; background:linear-gradient(180deg,#fff,#eef6fd); border:2px solid #9fb4c8; box-shadow:0 1px 3px rgba(20,50,90,.2); }
+  .si.tier-rare { border-color:#4aa6ec; } .si.tier-epic { border-color:#a06be0; box-shadow:0 0 10px rgba(160,107,224,.35); } .si.tier-legendary { border-color:#f0b429; box-shadow:0 0 14px rgba(240,180,41,.55); background:linear-gradient(180deg,#fffbe9,#fff1bf); }
+  .oth-prev { height:96px; display:grid; place-items:center; border-radius:6px; background:radial-gradient(circle at 50% 30%,#fff,#d6ebfb); overflow:hidden; } .oth-prev .avatar-svg { width:100%; height:100%; } .oth-prev.txt { padding:4px; } .oth-prev.txt b { font-size:var(--t-lg); }
+  .sn { font-weight:700; font-size:var(--t-sm); margin:6px 0 2px; } .sp { display:flex; align-items:center; justify-content:center; gap:4px; margin-bottom:6px; font-size:var(--t-sm); } .own { color:var(--good); font-weight:700; }
+  @media (max-width:640px) { .shopgrid, .pgrid { grid-template-columns:minmax(0,1fr); } .scene2 { height:170px; } .alena { width:120px; height:120px; } .teddy { width:74px; height:74px; } }
+
   /* ---------- phones: simpler chrome, stacked panels ---------- */
   @media (max-width:899px) {
     #chatcard { order:-1; } .chatform { position:fixed; left:0; right:0; bottom:0; z-index:40; padding-bottom:calc(var(--s2) + env(safe-area-inset-bottom)); }
@@ -241,7 +278,7 @@
   }
   @media (max-width:640px) {
     main { padding:var(--s2); padding-top:max(var(--s2),env(safe-area-inset-top)); } .win { border-radius:7px 7px 4px 4px; } .tb { min-height:26px; } .ctl span { display:none; } .ctl > :last-child { width:34px; }
-    .win-body { padding:var(--s3); } .home .win-body { padding:var(--s4); } .cw-grid { grid-template-columns:1fr; overflow:auto; } .cw-prev { flex-direction:row; flex-wrap:wrap; justify-content:center; border-right:0; border-bottom:1px solid var(--line-strong); padding:var(--s2); gap:var(--s2); }
+    .win-body { padding:var(--s3); } .home .win-body { padding:var(--s4); } .cw-grid { grid-template-columns:minmax(0,1fr); overflow:auto; } .cw-prev { flex-direction:row; flex-wrap:wrap; justify-content:center; border-right:0; border-bottom:1px solid var(--line-strong); padding:var(--s2); gap:var(--s2); }
     .frame { max-width:120px; } .cw { max-height:100vh; border-radius:0; } .creator { padding:0; align-items:stretch; } .pane { padding:var(--s3); } .tb-tools .code { height:26px; } .wmp .art { width:40px; height:40px; }
   }
   @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
@@ -253,15 +290,17 @@
 <main id="app"></main>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="creator" id="creator" hidden></div>
+<div class="creator" id="overlay" hidden></div>
 <dialog id="privacy" aria-labelledby="ph">
   <div class="tb"><span class="ttl">Song Sense - Privacy</span></div>
   <div class="win-body">
   <h2 id="ph">Privacy</h2>
   <p>Song Sense is a small party game. We keep it simple:</p>
   <ul>
-    <li>No accounts. You choose a display name and avatar; they are shown to the other players in your game.</li>
-    <li>Game rooms live only in the server's memory and disappear a few hours after the last activity or when the server restarts. We don't keep a database of players, guesses or chat.</li>
-    <li>Your browser stores a random player ID, your name and your avatar settings locally so you can rejoin if you refresh. Leaving the game or clearing site data removes them.</li>
+    <li>Playing as a guest needs no account: you choose a display name and avatar, shown to the other players in your game.</li>
+    <li>An optional profile is a username and a 4-digit PIN. We store the username, a salted hash of the PIN (never the PIN itself), your coins, purchases, avatar, stats and a sign-in token on the server. We do not collect an email address or any real-world information. Don't reuse a PIN you use anywhere important: 4 digits is easy to guess, so five wrong tries lock the username for 15 minutes.</li>
+    <li>Game rooms, guesses and chat live only in the server's memory and disappear a few hours after the last activity or when the server restarts. Profiles are kept in a small file on the server and may be reset when the server is redeployed or moved.</li>
+    <li>Your browser stores a random player ID, your name, your avatar settings and (if you sign in) a sign-in token locally so you can rejoin and stay signed in. Signing out or clearing site data removes them.</li>
     <li>No ads, no analytics, no tracking cookies.</li>
     <li>Song playback is Spotify's own embedded player. Spotify may set its own cookies and receive your IP address when a song player loads, under <a href="https://www.spotify.com/legal/privacy-policy/" target="_blank" rel="noopener noreferrer">Spotify's privacy policy</a>. Song Sense never touches your Spotify account.</li>
     <li>Please don't put personal information in your name or chat. Hosting providers keep ordinary server logs (IP addresses) for security.</li>
@@ -270,7 +309,9 @@
   <button class="btn primary block" id="privacy-close">Got it</button>
   </div>
 </dialog>
+<script src="shop-data.js"></script>
 <script src="avatar.js"></script>
+<script src="profile.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

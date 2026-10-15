@@ -10,6 +10,12 @@ const { judge, mask } = require('./lib/match');
 const { guessPoints, pickerPoints } = require('./lib/scoring');
 const { limiter } = require('./lib/ratelimit');
 const Avatar = require('./public/avatar.js');      // same module the browser uses, so the schema is defined once
+const Shop = require('./public/shop-data.js');
+const { Accounts } = require('./lib/accounts');
+const accounts = new Accounts(process.env.DATA_DIR || path.join(__dirname, 'data'), { starterCoins: process.env.STARTER_COINS !== undefined ? Number(process.env.STARTER_COINS) : undefined });
+const bearer = (req) => { const h = String(req.headers.authorization || ''); return h.startsWith('Bearer ') ? h.slice(7).trim() : ''; };
+const userOf = (req) => accounts.userByToken(bearer(req));
+const guestAvatar = (a) => (Avatar.valid(a) && !Shop.lockedIn(a, []).length ? a : null);   // players without a profile can only wear free items
 const cleanAvatar = (a) => (Avatar.valid(a) ? a : null);   // untrusted input: store only an exact, in-range config (null = client shows a name-based default)
 
 const PORT = process.env.PORT || 3000;
@@ -42,7 +48,7 @@ function newCode() {
 }
 
 /* ---------- rate limits (per client IP) ---------- */
-const limits = { avatar: limiter(60, 60000), global: limiter(2400, 60000), create: limiter(20, 600000), join: limiter(60, 600000), search: limiter(60, 60000), song: limiter(40, 60000), playback: limiter(240, 60000), guess: limiter(240, 60000) };
+const limits = { signup: limiter(10, 3600000), login: limiter(40, 600000), shop: limiter(90, 60000), avatar: limiter(60, 60000), global: limiter(2400, 60000), create: limiter(20, 600000), join: limiter(60, 600000), search: limiter(60, 60000), song: limiter(40, 60000), playback: limiter(240, 60000), guess: limiter(240, 60000) };
 const clientIp = (req) => (TRUST_PROXY && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || 'unknown';
 function limit(name, req) { const r = limits[name](clientIp(req)); if (!r.ok) { const e = httpErr(429, `You're doing that a lot. Try again in ${r.retry}s.`); e.retry = r.retry; throw e; } }
 
@@ -94,9 +100,9 @@ function viewFor(room, pid) {
   const me = room.players[pid], isPicker = pid === room.pickerId, now = Date.now();
   const revealed = room.phase === 'roundend' || room.phase === 'gameover';
   const players = orderedIds(room).map((id) => { const p = room.players[id];
-    return { id, name: p.name, avatar: p.avatar || null, ready: id === room.hostId || !!p.ready, react: p.react && now - p.react.at < 4500 ? p.react : null, score: p.score, isHost: id === room.hostId, online: isOnline(p), isPicker: inGame(room) && id === room.pickerId, guessed: !!room.guessed[id], gain: revealed ? (room.gains[id] || 0) : 0 }; });
+    return { id, name: p.name, avatar: p.avatar || null, flair: p.flair || null, signed: !!p.user, ready: id === room.hostId || !!p.ready, react: p.react && now - p.react.at < 4500 ? p.react : null, score: p.score, isHost: id === room.hostId, online: isOnline(p), isPicker: inGame(room) && id === room.pickerId, guessed: !!room.guessed[id], gain: revealed ? (room.gains[id] || 0) : 0 }; });
   const out = { v: room.v, now, code: room.code, phase: room.phase, round: room.round, totalRounds: room.round + room.queue.length, settings: room.settings,
-    me: { id: pid, name: me.name, isHost: pid === room.hostId, isPicker, guessed: !!room.guessed[pid] }, players, pickerId: inGame(room) ? room.pickerId : null,
+    me: { id: pid, signed: !!me.user, name: me.name, isHost: pid === room.hostId, isPicker, guessed: !!room.guessed[pid] }, players, pickerId: inGame(room) ? room.pickerId : null,
     deadline: room.deadline, span: room.span, scoreClockStart: room.firstSongAt, songs: room.songs.map((s, i) => ({ n: i + 1, trackId: s.trackId, title: s.title, thumb: s.thumb })), maxSongs: MAX_SONGS };
   if (room.phase === 'choosing' && isPicker) out.options = room.options.map((o) => ({ word: o.word, category: o.category }));
   if (room.phase === 'playing' || room.phase === 'roundend') {
@@ -106,7 +112,7 @@ function viewFor(room, pid) {
   }
   if (room.phase === 'playing' || room.phase === 'roundend') out.play = room.play;
   if (room.phase === 'roundend') out.result = room.result;
-  if (room.phase === 'gameover') out.final = room.final;
+  if (room.phase === 'gameover') { out.final = room.final; out.earned = (room.earned && room.earned[pid]) || 0; }
   const guessedOrPicker = isPicker || !!room.guessed[pid];
   out.chat = room.chat.filter((m) => m.vis === 'all' || m.vis === pid || (m.vis === 'guessed' && (room.phase !== 'playing' || guessedOrPicker))).slice(-60)
     .map((m) => ({ id: m.id, kind: m.kind, name: m.name, text: m.text, group: m.vis === 'guessed' }));
@@ -146,9 +152,21 @@ function endRound(room, reason) {
   if (room.word) say(room, 'sys', `The answer was “${room.word.word}”.`);
   touch(room);
 }
+// Points become coins when a game ends: your score, a small finishing bonus, and a winner bonus. Signed-in players only; awarded once per game.
+function awardCoins(room) {
+  if (room.awarded) return; room.awarded = true; room.earned = {};
+  const ids = orderedIds(room), top = Math.max(0, ...ids.map((id) => room.players[id].score)), played = room.round >= 2;
+  for (const id of ids) {
+    const p = room.players[id], u = p.user && accounts.byKey(p.user); if (!u) continue;
+    const win = played && ids.length > 1 && top > 0 && p.score === top;
+    const coins = p.score + (played ? Shop.PARTICIPATION_COINS : 0) + (win ? Shop.WIN_BONUS_COINS : 0);
+    accounts.award(u, coins, { win, game: played }); room.earned[id] = coins;
+  }
+}
 function finishGame(room) {
   room.phase = 'gameover'; room.pickerId = null; room.deadline = null; room.word = null; room.songs = []; room.options = [];
   room.final = orderedIds(room).map((id) => ({ id, name: room.players[id].name, score: room.players[id].score })).sort((a, b) => b.score - a.score);
+  awardCoins(room);
   say(room, 'sys', 'Game over!'); touch(room);
 }
 function maybeEarlyEnd(room) {
@@ -159,6 +177,7 @@ function maybeEarlyEnd(room) {
 function removePlayer(room, pid) {
   const p = room.players[pid]; if (!p) return;
   const wasPicker = inGame(room) && room.pickerId === pid;
+  if (p.user && inGame(room) && !room.awarded && p.score > 0) { const u = accounts.byKey(p.user); if (u) accounts.award(u, p.score); }   // leaving early keeps the points you already earned
   delete room.players[pid]; delete room.guessed[pid];
   if (!Object.keys(room.players).length) { rooms.delete(room.code); return; }
   room.queue = room.queue.filter((x) => x !== pid);
@@ -189,11 +208,11 @@ const settingsFrom = (b, cur) => {
 const routes = {
   'POST /api/create': async (b, req) => {
     limit('create', req);
-    const name = cleanName(b.name); if (!name) throw httpErr(400, 'Enter your name to host a game.');
+    const user = userOf(req), name = user ? user.username : cleanName(b.name); if (!name) throw httpErr(400, 'Enter your name to host a game.');
     const code = newCode(), pid = rid(8);
     rooms.set(code, { code, v: 1, updated: Date.now(), active: Date.now(), hostId: pid, phase: 'lobby', round: 0, queue: [], settings: { cats: ['emotions', 'adjectives', 'scenarios'], secs: 90, cycles: 1 },
-      players: { [pid]: { name, avatar: cleanAvatar(b.avatar), ready: true, score: 0, lastSeen: Date.now(), joinedAt: Date.now() } }, pickerId: null, options: [], word: null, songs: [], guessed: {}, gains: {}, usedWords: new Set(),
-      deadline: null, firstSongAt: null, play: null, result: null, final: null, chat: [], chatSeq: 0 });
+      players: { [pid]: { name, user: user ? user.key : null, avatar: user ? user.avatar : guestAvatar(b.avatar), flair: accounts.flairOf(user), ready: true, score: 0, lastSeen: Date.now(), joinedAt: Date.now() } }, pickerId: null, options: [], word: null, songs: [], guessed: {}, gains: {}, usedWords: new Set(),
+      awarded: false, earned: {}, deadline: null, firstSongAt: null, play: null, result: null, final: null, chat: [], chatSeq: 0 });
     return { code, pid };
   },
   'POST /api/join': async (b, req) => {
@@ -201,19 +220,29 @@ const routes = {
     const code = String(b.code || '').toUpperCase().trim();
     if (!CODE_RE.test(code)) throw httpErr(400, 'Room codes are 4 letters, like ABCD.');
     const room = rooms.get(code); if (!room) throw httpErr(404, `We couldn't find a game with code ${code}. Check the code, or ask the host for a new invite link.`);
-    const name = cleanName(b.name); if (!name) throw httpErr(400, 'Enter your name to join.');
+    const user = userOf(req), name = user ? user.username : cleanName(b.name); if (!name) throw httpErr(400, 'Enter your name to join.');
+    if (user && Object.values(room.players).some((p) => p.user === user.key)) throw httpErr(400, "You're already in this game on another device.");
     if (Object.keys(room.players).length >= MAX_PLAYERS) throw httpErr(400, 'This game is full.');
     if (Object.values(room.players).some((p) => p.name.toLowerCase() === name.toLowerCase())) throw httpErr(400, 'Someone in this game already has that name. Try another.');
-    const pid = rid(8); room.players[pid] = { name, avatar: cleanAvatar(b.avatar), ready: false, score: 0, lastSeen: Date.now(), joinedAt: Date.now() }; room.active = Date.now();
+    const pid = rid(8); room.players[pid] = { name, user: user ? user.key : null, avatar: user ? user.avatar : guestAvatar(b.avatar), flair: accounts.flairOf(user), ready: false, score: 0, lastSeen: Date.now(), joinedAt: Date.now() }; room.active = Date.now();
     if (inGame(room)) for (let i = 0; i < room.settings.cycles; i++) room.queue.push(pid);   // latecomers get their turn(s) at the end
     say(room, 'sys', `${name} joined.`); touch(room);
     return { code, pid };
   },
+  /* ---------- profiles and the shop ---------- */
+  'POST /api/signup': async (b, req) => { limit('signup', req); const r = await accounts.signup(b.username, b.pin, b.avatar); return { token: r.token, user: accounts.publicUser(r.user) }; },
+  'POST /api/login': async (b, req) => { limit('login', req); const r = await accounts.login(b.username, b.pin); return { token: r.token, user: accounts.publicUser(r.user) }; },
+  'POST /api/logout': async (b, req) => { accounts.logout(bearer(req)); return { ok: true }; },
+  'POST /api/profile/avatar': async (b, req) => { limit('shop', req); const u = userOf(req); if (!u) throw httpErr(401, 'Sign in first.'); accounts.setAvatar(u, b.avatar); return { user: accounts.publicUser(u) }; },
+  'POST /api/profile/equip': async (b, req) => { limit('shop', req); const u = userOf(req); if (!u) throw httpErr(401, 'Sign in first.'); accounts.equip(u, String(b.slot), b.id === null ? null : String(b.id)); return { user: accounts.publicUser(u) }; },
+  'POST /api/shop/buy': async (b, req) => { limit('shop', req); const u = userOf(req); if (!u) throw httpErr(401, 'Sign in to shop.'); const it = accounts.buy(u, b.id); return { user: accounts.publicUser(u), bought: it.id }; },
   'POST /api/leave': async (b) => { const room = getRoom(b.code, b.pid); removePlayer(room, b.pid); return { ok: true }; },
   'POST /api/avatar': async (b, req) => {
     limit('avatar', req);
-    const room = getRoom(b.code, b.pid); const a = cleanAvatar(b.avatar); if (!a) throw httpErr(400, "That avatar isn't valid.");
-    room.players[b.pid].avatar = a; touch(room); return { ok: true };
+    const room = getRoom(b.code, b.pid), p = room.players[b.pid], user = userOf(req);
+    if (p.user) { const u = accounts.byKey(p.user); if (!user || user.key !== p.user) throw httpErr(401, 'Sign in again to change your look.'); p.avatar = u.avatar; p.flair = accounts.flairOf(u); }
+    else { const a = guestAvatar(b.avatar); if (!a) throw httpErr(400, 'That look uses items you don\'t own. Sign in and visit the shop.'); p.avatar = a; }
+    touch(room); return { ok: true };
   },
   'POST /api/ready': async (b) => {
     const room = getRoom(b.code, b.pid); if (room.phase !== 'lobby') throw httpErr(400, 'Ready checks only happen in the lobby.');
@@ -305,11 +334,11 @@ const routes = {
     const room = getRoom(b.code, b.pid); hostOnly(room, b.pid);
     if (room.phase !== 'gameover') throw httpErr(400, 'The game isn\'t over yet.');
     for (const p of Object.values(room.players)) { p.score = 0; p.ready = false; p.react = null; }
-    room.phase = 'lobby'; room.round = 0; room.queue = []; room.final = null; room.chat = []; touch(room); return { ok: true };
+    room.awarded = false; room.earned = {}; room.phase = 'lobby'; room.round = 0; room.queue = []; room.final = null; room.chat = []; touch(room); return { ok: true };
   },
 };
 
-async function handle(req) {
+async function handle(req) {   // (req is also passed to every route so it can read the sign-in token)
   const url = new URL(req.url, 'http://x'); const key = req.method + ' ' + url.pathname; const q = url.searchParams;
   limit('global', req);
   if (key === 'GET /api/state') {
@@ -324,6 +353,7 @@ async function handle(req) {
     const room = CODE_RE.test(code) && rooms.get(code);
     return room ? { exists: true, players: Object.keys(room.players).length, phase: room.phase, full: Object.keys(room.players).length >= MAX_PLAYERS } : { exists: false };
   }
+  if (key === 'GET /api/me') { const u = userOf(req); if (!u) throw httpErr(401, 'Not signed in.'); return { user: accounts.publicUser(u) }; }
   if (key === 'GET /api/config') return { search: HAS_SEARCH, categories: words.meta(), secs: SECS_OPTIONS, maxCycles: MAX_CYCLES, maxPlayers: MAX_PLAYERS, minPlayers: MIN_PLAYERS };
   if (key === 'GET /api/search') {
     limit('search', req);
@@ -342,7 +372,7 @@ async function handle(req) {
 }
 
 const PUBLIC = path.join(__dirname, 'public');
-const STATIC = { '/': ['index.html', 'text/html; charset=utf-8'], '/index.html': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/avatar.js': ['avatar.js', 'text/javascript; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
+const STATIC = { '/': ['index.html', 'text/html; charset=utf-8'], '/index.html': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/avatar.js': ['avatar.js', 'text/javascript; charset=utf-8'], '/shop-data.js': ['shop-data.js', 'text/javascript; charset=utf-8'], '/profile.js': ['profile.js', 'text/javascript; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');

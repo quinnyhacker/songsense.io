@@ -27,7 +27,8 @@ const ui = { listen: true, err: '', notice: '', name: store.get('songsense.name'
 const last = {}; const locks = new Set(); let fails = 0, inRoom = false;
 
 async function api(path, body) {
-  const opt = body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, ...(session || {}) }) } : {};
+  const hdr = { 'Content-Type': 'application/json', ...(auth.token ? { Authorization: 'Bearer ' + auth.token } : {}) };
+  const opt = body ? { method: 'POST', headers: hdr, body: JSON.stringify({ ...body, ...(session || {}) }) } : { headers: hdr };
   let r; try { r = await fetch('/api/' + path, opt); } catch { const e = new Error('Can\'t reach the game right now. Check your connection.'); e.network = true; throw e; }
   const j = await r.json().catch(() => ({}));
   if (!r.ok) { const e = new Error(j.error || 'Something went wrong. Please try again.'); e.status = r.status; throw e; }
@@ -75,7 +76,8 @@ function setSection(id, html, key, force) {
 
 /* ---------- shared pieces ---------- */
 /* ---------- avatars: config -> layered SVG, with expression reactions ---------- */
-const myAvatar = () => { let v = store.get('songsense.avatar'); if (!Avatar.valid(v)) { v = Avatar.random(); store.set('songsense.avatar', v); } return v; };   // first visit gets a random one, saved locally
+const myAvatarLocal = () => { let v = store.get('songsense.avatar'); if (!Avatar.valid(v)) { v = Avatar.random(); store.set('songsense.avatar', v); } return v; };   // first visit gets a random free look, saved locally
+const myAvatar = () => (auth.user && Avatar.valid(auth.user.avatar) ? auth.user.avatar : Avatar.sanitize(myAvatarLocal(), ownedSet()));
 const svgMemo = new Map();
 function avSvg(cfg, expr) { const k = JSON.stringify(cfg) + '|' + expr; if (!svgMemo.has(k)) { if (svgMemo.size > 500) svgMemo.clear(); svgMemo.set(k, Avatar.svg(cfg, { expr })); } return svgMemo.get(k); }
 const cfgOf = (p) => (p.avatar ? p.avatar : Avatar.fromName(p.name));      // players without a saved avatar get a stable one from their name
@@ -91,7 +93,8 @@ function exprFor(p) {                                                       // h
 function avatar(p, sz = 40, opts = {}) {
   const ring = opts.plain ? '' : p.guessed ? 'ok' : p.isPicker ? 'pick' : '';
   const badge = opts.badge || (opts.plain ? '' : p.isHost ? `<span class="badge" title="Host">${icon('star')}</span>` : p.guessed ? `<span class="badge good">${icon('check')}</span>` : '');
-  return `<span class="av ${ring} ${p.online === false ? 'off' : ''}" style="--sz:${sz}px" aria-hidden="true">${avSvg(cfgOf(p), exprFor(p))}${badge}</span>`;
+  const fl = p.flair || {}, fr = flairKey(fl.frame), cheer = p.react && p.react.k === 'excited' && nowMs() - p.react.at < 4500;
+  return `<span class="av ${ring} ${p.online === false ? 'off' : ''}" ${fr ? `data-frame="${fr}"` : ''} style="--sz:${sz}px" aria-hidden="true">${avSvg(cfgOf(p), exprFor(p))}${badge}${cheer && fl.fx ? fxHtml(flairKey(fl.fx)) : ''}</span>`;
 }
 const nowMs = () => Date.now() + clockOffset;
 const mmss = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -124,8 +127,8 @@ function renderHome() {
   document.body.dataset.phase = 'home'; inRoom = false;
   const typed = document.getElementById('nm'); if (typed) ui.name = typed.value;   // a re-render (e.g. invite check finishing) must not wipe the name being typed
   const inv = ui.invite, bad = inv && (inv.status === 'missing' || inv.status === 'full');
-  const meRow = `<div class="me-row"><button type="button" class="avbtn" data-act="avatar" aria-label="Customize your avatar" title="Customize your avatar">${avatar({ name: ui.name || 'you', avatar: myAvatar() }, 60, { badge: `<span class="badge" aria-hidden="true">${icon('pen')}</span>` })}</button>
-    <label class="sr" for="nm">Your name</label><input id="nm" name="name" maxlength="20" placeholder="Your name" value="${esc(ui.name)}" autocomplete="nickname" ${bad ? 'disabled' : ''}></div>`;
+  const meRow = `<div class="me-row"><button type="button" class="avbtn" data-act="avatar" aria-label="Customize your avatar" title="Customize your avatar">${avatar({ name: ui.name || 'you', avatar: myAvatar(), flair: auth.user ? auth.user.flair : null }, 60, { badge: `<span class="badge" aria-hidden="true">${icon('pen')}</span>` })}</button>
+    <label class="sr" for="nm">Your name</label><input id="nm" name="name" maxlength="20" placeholder="Your name" value="${esc(auth.user ? auth.user.username : ui.name)}" autocomplete="nickname" ${bad || auth.user ? 'disabled' : ''}></div>`;
   let form;
   if (inv) {
     form = `<div class="card invite-card" id="invcard">${inviteCardHtml()}</div>
@@ -136,7 +139,7 @@ function renderHome() {
       <form data-form="join" class="field"><label class="sr" for="cd">Room code</label><input id="cd" class="codein" name="code" maxlength="4" placeholder="CODE" value="${esc(ui.code)}" autocapitalize="characters" autocomplete="off" spellcheck="false"><button class="btn primary">Join</button></form>`;
   }
   $app.innerHTML = `<div class="home enter"><div class="win"><div class="tb"><span class="ttl">${smallMark} Song Sense</span>${winCtl()}</div><div class="win-body">${MARK}<h1>Song <i>Sense</i></h1><p class="lede">Hint a word with up to three songs. Your friends type what it is. The faster they guess, the more they score.</p>
-    ${ui.notice ? `<p class="banner warn" role="status" style="margin-bottom:16px">${esc(ui.notice)}</p>` : ''}${form}<p class="err" id="err" role="alert">${esc(ui.err)}</p>
+    ${ui.notice ? `<p class="banner warn" role="status" style="margin-bottom:16px">${esc(ui.notice)}</p>` : ''}${accountBarHtml()}${form}<p class="err" id="err" role="alert">${esc(ui.err)}</p>
     <ol class="how"><li>One player is the picker and secretly chooses 1 of 3 words: an emotion, adjective or scenario.</li><li>The picker adds a Spotify song, then optionally a second and third, to hint at it.</li><li>Everyone else listens and types guesses. Early guesses on early songs score the most.</li></ol>
     <p class="foot">Free, no accounts. Works best with 3 to 8 friends.<br><button type="button" data-act="privacy">Privacy</button> &middot; <button type="button" data-act="intro">A note from the maker</button> &middot; Not affiliated with Spotify.</p></div></div></div>`;
   if (inv && inv.status === 'checking') checkInvite();
@@ -176,6 +179,7 @@ function render() {
   if (!session || !state) return renderHome();
   if (!inRoom || !document.getElementById('room')) shell();
   const s = state; document.body.dataset.phase = s.phase;
+  if (s.phase === 'gameover' && s.me.signed && ui.paidFor !== s.code + s.round) { ui.paidFor = s.code + s.round; refreshMe(); }   // coins were just paid out
   setText('t-hero', { lobby: 'Game Lobby', choosing: `Round ${s.round} of ${s.totalRounds}`, playing: `Round ${s.round} of ${s.totalRounds}`, roundend: `Round ${s.round} results`, gameover: 'Final results' }[s.phase]);
   setText('t-main', { lobby: 'Lobby settings', choosing: 'Choose your word', playing: 'Add a song', roundend: 'Round results', gameover: 'Leaderboard' }[s.phase]);
   setSection('hero', heroHtml(), s.phase + s.round + s.pickerId + (s.songs.length ? 's' : '') + s.me.guessed);
@@ -236,7 +240,7 @@ function mainHtml() {
     const can = s.players.length >= cfg.minPlayers && s.settings.cats.length;
     return `<div class="card invite-card"><p class="label">Room code</p><div class="tilesbig" aria-label="Room code ${esc(s.code)}">${[...s.code].map((c) => `<span>${esc(c)}</span>`).join('')}</div>
       <div class="row center" style="margin-top:12px"><button class="btn sm" data-act="copyinvite">${icon('copy')}Copy invite link</button>${navigator.share ? `<button class="btn sm" data-act="share">${icon('share')}Share</button>` : ''}</div>
-      <p class="hint" style="margin-top:10px">Friends open the link or enter the code at ${esc(location.host)}.</p></div>${settingsHtml()}
+      <p class="hint" style="margin-top:10px">Friends open the link or enter the code at ${esc(location.host)}.</p>${me.signed ? '' : `<p class="hint" style="margin-top:6px">You're a guest: sign in from the home screen to earn coins and keep your avatar.</p>`}</div>${settingsHtml()}
       ${me.isHost ? `<button class="btn go block" data-act="start" ${can ? '' : 'disabled'}>${can ? 'Start game' : 'Need 2+ players'}</button><p class="hint" style="text-align:center">${guests.length ? `${nready} of ${guests.length} players ready${nready < guests.length ? ' (you can start anyway)' : ''}` : 'Waiting for friends to join&hellip;'}</p>`
         : `<button class="btn ${meP.ready ? '' : 'go'} block" data-act="ready" aria-pressed="${!!meP.ready}">${meP.ready ? 'Ready! (click to undo)' : "I'm ready!"}</button><p class="hint" style="text-align:center">Waiting for ${esc(hostName())} to start the game&hellip;</p>`}
       <button class="btn sm block" data-act="avatar">${icon('pen')}Edit my avatar</button><p class="err" id="err" role="alert">${esc(ui.err)}</p>`;
@@ -262,7 +266,7 @@ function pickerControls() {
 function resultsHtml() {
   const r = state.result, gs = r.guessers;
   return `<div class="card res"><p class="label" style="text-align:center">The ${esc(catLabel(r.category || '').toLowerCase())} was</p><p class="answer">${esc(r.word || '')}</p>
-    ${gs.length ? `<ol class="rank">${gs.map((g, i) => `<li><span class="pos">${i + 1}</span>${avatar(P(g.id), 38, { plain: true })}<span class="nm">${esc(g.name)}<span class="tag">after ${plural(g.songs, 'song')}</span></span><span class="pts" style="color:var(--good)">+${g.points}</span></li>`).join('')}</ol>` : '<p class="muted" style="text-align:center;margin:12px 0">Nobody got it this time.</p>'}
+    ${gs.length ? `<ol class="rank">${gs.map((g, i) => `<li><span class="pos">${i + 1}</span>${avatar(P(g.id), 38, { plain: true })}<span class="nm"><span class="${nameCls(P(g.id))}">${esc(g.name)}</span><span class="tag">after ${plural(g.songs, 'song')}</span></span><span class="pts" style="color:var(--good)">+${g.points}</span></li>`).join('')}</ol>` : '<p class="muted" style="text-align:center;margin:12px 0">Nobody got it this time.</p>'}
     ${r.pickerPoints ? `<p class="hint" style="text-align:center;margin-top:12px"><b style="color:var(--text)">${esc(r.pickerName)}</b> earns +${r.pickerPoints} for a great hint</p>` : ''}
     ${r.missed.length && gs.length ? `<p class="hint" style="text-align:center;margin-top:6px">Didn't get it: ${esc(r.missed.join(', '))}</p>` : ''}</div>
     ${state.me.isHost ? `<button class="btn block" data-act="next">Next round now</button>` : ''}<p class="err" id="err" role="alert">${esc(ui.err)}</p>`;
@@ -270,7 +274,8 @@ function resultsHtml() {
 function finalHtml() {
   const f = state.final || [], top = f[0], tie = f.filter((x) => x.score === (top || {}).score);
   return `<div class="card"><div class="winner pop"><div class="podium">${top ? avatar(P(top.id), 110, { plain: true }) : ''}</div><p class="label" style="margin-top:10px">${tie.length > 1 ? 'It\'s a tie' : 'Winner'}</p><h2>${esc(tie.map((t) => t.name).join(' & '))}</h2></div>
-    <ol class="rank">${f.map((p, i) => `<li><span class="pos">${i + 1}</span>${avatar(P(p.id), 38, { plain: true })}<span class="nm">${esc(p.name)}${p.id === state.me.id ? '<span class="tag">you</span>' : ''}</span><span class="pts nums">${p.score}</span></li>`).join('')}</ol></div>
+    <ol class="rank">${f.map((p, i) => `<li><span class="pos">${i + 1}</span>${avatar(P(p.id), 38, { plain: true })}<span class="nm"><span class="${nameCls(P(p.id))}">${esc(p.name)}</span>${p.id === state.me.id ? '<span class="tag">you</span>' : ''}</span><span class="pts nums">${p.score}</span></li>`).join('')}</ol></div>
+    ${state.me.signed ? `<p class="banner" style="margin-top:12px;text-align:center">${COIN} You earned <b>+${(state.earned || 0).toLocaleString()}</b> coins! <button type="button" class="btn sm" data-act="shop" style="margin-left:6px">Visit Alena's shop</button></p>` : `<p class="banner warn" style="margin-top:12px;text-align:center">Playing as a guest. Create a profile on the home screen to turn your points into coins.</p>`}
     <div class="stack-gap" style="margin-top:16px">${state.me.isHost ? `<button class="btn primary block" data-act="again">Play again</button>` : `<p class="banner warn" style="text-align:center">Waiting for ${esc(hostName())} to start another game&hellip;</p>`}</div><p class="err" id="err" role="alert">${esc(ui.err)}</p>`;
 }
 
@@ -366,7 +371,7 @@ function playersHtml() {
     else if (s.phase === 'roundend') { st = p.isPicker ? 'Picker' : p.guessed ? 'Got it' : 'Missed'; cls = p.guessed ? 'good' : ''; }
     else if (s.phase === 'gameover') st = p.online ? '' : 'Away';
     else if (p.isPicker) { st = 'Picker'; cls = 'acc'; } else if (p.guessed) { st = 'Got it!'; cls = 'good'; } else st = s.phase === 'playing' ? (p.online ? 'Guessing' : 'Away') : (p.online ? 'Waiting' : 'Away');
-    return `<li class="${p.id === s.me.id ? 'me' : ''}">${avatar(p, 46)}<span class="nm">${esc(p.name)}${p.id === s.me.id ? ' <span class="hint">(you)</span>' : ''}<span class="st ${cls}">${dot}${st}</span></span><span class="sc nums">${p.score}${p.gain ? `<span class="gain">+${p.gain}</span>` : ''}</span></li>`;
+    return `<li class="${p.id === s.me.id ? 'me' : ''}">${avatar(p, 46)}<span class="nm"><span class="${nameCls(p)}">${esc(p.name)}</span>${p.id === s.me.id ? ' <span class="hint">(you)</span>' : ''}${titleOf(p) ? `<span class="ptitle sm">${esc(titleOf(p))}</span>` : ''}<span class="st ${cls}">${dot}${st}</span></span><span class="sc nums">${p.score}${p.gain ? `<span class="gain">+${p.gain}</span>` : ''}</span></li>`;
   }).join('')}</ul>`;
 }
 
@@ -399,9 +404,12 @@ function updateChatForm() {
 /* ---------- avatar maker ---------- */
 const cr = { cfg: null, tab: 'hair', prev: null, focus: '', opener: null };
 const CR_TABS = [['hair', 'Hair'], ['face', 'Face'], ['skin', 'Skin'], ['clothes', 'Clothes'], ['acc', 'Accessories']];
+const LOCK = '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" fill="currentColor"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
+const lockOf = (field, i) => { const it = Shop.BY_ID[Shop.itemId(field, i)]; return it && !ownedSet().has(it.id) ? it : null; };
 const optGrid = (field, label) => `<h4>${label}</h4><div class="ogrid" role="group" aria-label="${label}">${Array.from({ length: Avatar.SCHEMA[field] }, (_, i) => {
-  const nm = Avatar.NAMES[field][i]; return `<button type="button" class="oth" data-cr="${field}" data-i="${i}" data-k="${field}${i}" aria-pressed="${cr.cfg[field] === i}" aria-label="${label}: ${nm}">${Avatar.svg({ ...cr.cfg, [field]: i })}<small>${nm}</small></button>`; }).join('')}</div>`;
-const swatches = (field, colors, label) => `<h4>${label}</h4><div class="swatches" role="group" aria-label="${label}">${colors.map((c, i) => `<button type="button" class="sw" style="background:${c}" data-cr="${field}" data-i="${i}" data-k="${field}${i}" aria-pressed="${cr.cfg[field] === i}" aria-label="${label} ${i + 1}"></button>`).join('')}</div>`;
+  const nm = Avatar.NAMES[field][i], lk = lockOf(field, i);
+  return `<button type="button" class="oth ${lk ? 'locked' : ''}" data-cr="${field}" data-i="${i}" data-k="${field}${i}" aria-pressed="${cr.cfg[field] === i}" aria-label="${label}: ${nm}${lk ? `, locked, ${lk.price} coins` : ''}">${Avatar.svg({ ...cr.cfg, [field]: i })}<small>${nm}</small>${lk ? `<span class="lk">${LOCK}${lk.price}</span>` : ''}</button>`; }).join('')}</div>`;
+const swatches = (field, colors, label) => `<h4>${label}</h4><div class="swatches" role="group" aria-label="${label}">${colors.map((c, i) => { const lk = lockOf(field, i); return `<button type="button" class="sw ${lk ? 'locked' : ''}" style="background:${c}" data-cr="${field}" data-i="${i}" data-k="${field}${i}" aria-pressed="${cr.cfg[field] === i}" aria-label="${label} ${i + 1}${lk ? `, locked, ${lk.price} coins` : ''}" ${lk ? `title="${lk.price} coins"` : ''}>${lk ? LOCK : ''}</button>`; }).join('')}</div>`;
 function crPane() {
   switch (cr.tab) {
     case 'hair': return optGrid('hair', 'Hairstyle') + optGrid('bangs', 'Bangs') + swatches('hairColor', Avatar.HAIR_COLORS, 'Hair color');
@@ -412,12 +420,13 @@ function crPane() {
   }
 }
 function renderCreator() {
+  const need = Shop.lockedIn(cr.cfg, ownedSet());
   const el = document.getElementById('creator'), old = el.querySelector('.pane'), top = old ? old.scrollTop : 0, ex = cr.prev === null ? cr.cfg.expr : cr.prev;
   el.innerHTML = `<div class="win cw" role="dialog" aria-modal="true" aria-labelledby="cwt"><div class="tb"><span class="ttl" id="cwt">Avatar Maker</span><span class="ctl"><span aria-hidden="true">${ctlSvg('min')}</span><span aria-hidden="true">${ctlSvg('max')}</span><button type="button" class="close" data-ca="close" aria-label="Close avatar maker">${ctlSvg('x')}</button></span></div>
     <div class="win-body"><div class="cw-grid"><div class="cw-prev"><div class="frame"><div class="scene">${Avatar.svg(cr.cfg, { expr: ex })}</div></div>
       <div><p class="label" style="text-align:center;margin-bottom:6px">Preview a mood</p><div class="ex-row">${Avatar.NAMES.expr.map((n, i) => `<button type="button" class="btn" data-ca="prev" data-i="${i}" data-k="p${i}" aria-pressed="${cr.prev === i}">${n}</button>`).join('')}</div></div></div>
       <div class="cw-opts"><div class="tabs" role="tablist">${CR_TABS.map(([k, l]) => `<button type="button" class="tab" role="tab" data-ca="tab" data-i="${k}" data-k="t${k}" aria-selected="${cr.tab === k}">${l}</button>`).join('')}</div><div class="pane" role="tabpanel">${crPane()}</div></div></div>
-    <div class="cw-foot"><button type="button" class="btn" data-ca="random">Randomize</button><button type="button" class="btn" data-ca="reset">Reset</button><span class="sp"></span><button type="button" class="btn" data-ca="close">Cancel</button><button type="button" class="btn go" data-ca="save">Save Avatar</button></div></div></div>`;
+    <div class="cw-foot"><button type="button" class="btn" data-ca="random">Randomize</button><button type="button" class="btn" data-ca="reset">Reset</button><span class="sp cw-note">${need.length ? `Trying on ${need.length} item${need.length === 1 ? '' : 's'} you don't own: ${need.slice(0, 3).map((i) => esc(Shop.BY_ID[i].name)).join(', ')}${need.length > 3 ? '&hellip;' : ''}. ${auth.user ? '<button type="button" class="linkbtn" data-ca="shop">Visit the shop</button>' : '<button type="button" class="linkbtn" data-ca="signin">Sign in to buy</button>'}` : ''}</span><button type="button" class="btn" data-ca="close">Cancel</button><button type="button" class="btn go" data-ca="save" ${need.length ? 'disabled' : ''}>Save Avatar</button></div></div></div>`;
   const pane = el.querySelector('.pane'); if (pane) pane.scrollTop = top;
   if (cr.focus) { const f = el.querySelector(`[data-k="${cr.focus}"]`); if (f) f.focus(); }
 }
@@ -430,7 +439,10 @@ function closeCreator() {
   if (cr.opener && cr.opener.focus && document.contains(cr.opener)) cr.opener.focus();
 }
 async function saveAvatar() {
-  const a = Avatar.normalize(cr.cfg); store.set('songsense.avatar', a); closeCreator(); toast('Avatar saved!');
+  const a = Avatar.normalize(cr.cfg);
+  if (Shop.lockedIn(a, ownedSet()).length) return toast("You don't own all of those items yet.");
+  if (auth.user) { try { const r = await api('profile/avatar', { avatar: a }); auth.user = r.user; } catch (e) { return toast(e.message); } }
+  store.set('songsense.avatar', a); closeCreator(); toast('Avatar saved!');
   if (session) { try { await api('avatar', { avatar: a }); await poll(true); } catch (e) { toast(e.message); } } else if (document.getElementById('nm')) renderHome();
 }
 document.getElementById('creator').addEventListener('click', (e) => {
@@ -438,7 +450,8 @@ document.getElementById('creator').addEventListener('click', (e) => {
   if (t.dataset.cr) { cr.cfg[t.dataset.cr] = Number(t.dataset.i); cr.focus = t.dataset.k; return renderCreator(); }
   const k = t.dataset.ca; if (!k) return; cr.focus = t.dataset.k || '';
   if (k === 'tab') cr.tab = t.dataset.i; else if (k === 'prev') cr.prev = cr.prev === Number(t.dataset.i) ? null : Number(t.dataset.i);
-  else if (k === 'random') { cr.cfg = Avatar.random(); cr.focus = ''; } else if (k === 'reset') { cr.cfg = { ...Avatar.DEFAULT }; cr.focus = ''; }
+  else if (k === 'random') { const own = ownedSet(); cr.cfg = Avatar.random(null, (f, v) => Shop.isFree(f, v) || own.has(Shop.itemId(f, v))); cr.focus = ''; } else if (k === 'reset') { cr.cfg = { ...Avatar.DEFAULT }; cr.focus = ''; }
+  else if (k === 'shop') { closeCreator(); return openShop(); } else if (k === 'signin') { closeCreator(); return openAuth('login'); }
   else if (k === 'close') return closeCreator(); else if (k === 'save') return saveAvatar();
   renderCreator();
 });
@@ -457,7 +470,7 @@ document.addEventListener('submit', async (e) => {
   }
   const kind = f.dataset.form; if (!kind) return;
   if (kind === 'create' || kind === 'join') {
-    const nmEl = document.getElementById('nm'), name = (nmEl ? nmEl.value : val(f, 'name')).trim(); ui.name = name; store.set('songsense.name', name);
+    const nmEl = document.getElementById('nm'), name = auth.user ? auth.user.username : (nmEl ? nmEl.value : val(f, 'name')).trim(); if (!auth.user) { ui.name = name; store.set('songsense.name', name); }
     const code = kind === 'join' ? (ui.invite ? ui.invite.code : val(f, 'code').toUpperCase().replace(/[^A-Z]/g, '')) : null; ui.code = code || '';
     if (!name) return setErr('Enter your name first.');
     if (kind === 'join' && !code) return setErr('Enter the 4-letter room code.');
@@ -472,6 +485,10 @@ document.addEventListener('submit', async (e) => {
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act;
   if (a === 'privacy') return document.getElementById('privacy').showModal();
+  if (a === 'signin') return openAuth('login');
+  if (a === 'profile') return openProfile();
+  if (a === 'shop') return openShop();
+  if (a === 'signout') return signOut();
   if (a === 'avatar') return openCreator();
   if (a === 'intro') return showIntro();
   if (a === 'listen') { ui.listen = !ui.listen; last.listen = null; toast(ui.listen ? "Listening along: the picker's play button now plays for you too" : 'Stopped listening along'); if (state) syncSongs(); return; }
@@ -543,3 +560,4 @@ function showIntro() {
 
 fetch('/api/config').then((r) => r.json()).then((c) => { cfg = c; if (state) render(); }).catch(() => {});
 if (session) poll(true).then(() => { if (!state) render(); }); else { render(); if (!store.get(INTRO_KEY)) showIntro(); }
+refreshMe().then(() => { if (state) render(); else if (!session) renderHome(); });   // load the profile (if signed in) and redraw with coins and flair
