@@ -138,7 +138,7 @@ function renderHome() {
   $app.innerHTML = `<div class="home enter"><div class="win"><div class="tb"><span class="ttl">${smallMark} Song Sense</span>${winCtl()}</div><div class="win-body">${MARK}<h1>Song <i>Sense</i></h1><p class="lede">Hint a word with up to three songs. Your friends type what it is. The faster they guess, the more they score.</p>
     ${ui.notice ? `<p class="banner warn" role="status" style="margin-bottom:16px">${esc(ui.notice)}</p>` : ''}${form}<p class="err" id="err" role="alert">${esc(ui.err)}</p>
     <ol class="how"><li>One player is the picker and secretly chooses 1 of 3 words: an emotion, adjective or scenario.</li><li>The picker adds a Spotify song, then optionally a second and third, to hint at it.</li><li>Everyone else listens and types guesses. Early guesses on early songs score the most.</li></ol>
-    <p class="foot">Free, no accounts. Works best with 3 to 8 friends.<br><button type="button" data-act="privacy">Privacy</button> &middot; Not affiliated with Spotify.</p></div></div></div>`;
+    <p class="foot">Free, no accounts. Works best with 3 to 8 friends.<br><button type="button" data-act="privacy">Privacy</button> &middot; <button type="button" data-act="intro">A note from the maker</button> &middot; Not affiliated with Spotify.</p></div></div></div>`;
   if (inv && inv.status === 'checking') checkInvite();
 }
 function inviteCardHtml() {
@@ -473,6 +473,7 @@ document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act;
   if (a === 'privacy') return document.getElementById('privacy').showModal();
   if (a === 'avatar') return openCreator();
+  if (a === 'intro') return showIntro();
   if (a === 'listen') { ui.listen = !ui.listen; last.listen = null; toast(ui.listen ? "Listening along: the picker's play button now plays for you too" : 'Stopped listening along'); if (state) syncSongs(); return; }
   if (a === 'home') { ui.invite = null; ui.code = ''; history.replaceState(null, '', location.pathname); return renderHome(); }
   if (a === 'copyinvite') { const u = inviteUrl(); try { await navigator.clipboard.writeText(u); toast('Invite link copied'); } catch { prompt('Copy this invite link:', u); } return; }
@@ -497,5 +498,41 @@ document.addEventListener('click', async (e) => {
 });
 document.getElementById('privacy-close').addEventListener('click', () => document.getElementById('privacy').close());
 
+/* ---------- welcome message from the maker: a Pokemon-style dialogue box, shown once per browser ---------- */
+const INTRO_KEY = 'songsense.intro.v1';
+const MAKER = { skin: 1, hair: 1, hairColor: 1, bangs: 2, eyes: 3, eyeColor: 4, brows: 0, expr: 2, blush: 1, freckles: 0, mark: 0, clothes: 1, clothesColor: 0, acc: 1, accColor: 9 };
+const INTRO_PAGES = [
+  'Hi Vivian,',
+  'I started making this site before you left for your rotation. In hopes to learn more about making apps / sites in JavaScript.',
+  'I wanted to finish right before you left but I suck lol.',
+  'I hope you enjoy',
+];
+function showIntro() {
+  if (document.getElementById('intro')) return;
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const el = document.createElement('div'); el.id = 'intro'; el.className = 'intro'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'A message from the maker: ' + INTRO_PAGES.join(' '));
+  el.innerHTML = `<button type="button" class="intro-skip" data-i="skip">Skip</button><div class="intro-stage"><div class="intro-av" aria-hidden="true"></div>
+    <button type="button" class="dlg" data-i="next" aria-label="Next"><span class="dlg-text" aria-hidden="true"></span><span class="dlg-arrow" aria-hidden="true">&#9660;</span></button></div>`;
+  document.body.appendChild(el); document.body.style.overflow = 'hidden';
+  const av = el.querySelector('.intro-av'), txt = el.querySelector('.dlg-text'), arrow = el.querySelector('.dlg-arrow'), btn = el.querySelector('.dlg');
+  let page = 0, i = 0, timer = null, talk = null, done = false;
+  const face = (x) => { av.innerHTML = Avatar.svg(MAKER, { expr: x, label: 'The maker' }); };
+  face(MAKER.expr);
+  const stopTalk = () => { clearInterval(talk); talk = null; face(MAKER.expr); };
+  function finishPage() { clearInterval(timer); txt.textContent = INTRO_PAGES[page]; done = true; stopTalk(); arrow.classList.add('on'); }
+  function start() {
+    done = false; i = 0; txt.textContent = ''; arrow.classList.remove('on');
+    if (reduce) return finishPage();
+    let flip = false; talk = setInterval(() => { flip = !flip; face(flip ? Avatar.EXPR.happy : Avatar.EXPR.excited); }, 140);
+    timer = setInterval(() => { i++; txt.textContent = INTRO_PAGES[page].slice(0, i); if (i >= INTRO_PAGES[page].length) finishPage(); }, 32);
+  }
+  function close() { clearInterval(timer); clearInterval(talk); store.set(INTRO_KEY, 1); el.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', onKey); if (!session) renderHome(); }
+  function advance() { if (!done) return finishPage(); if (page < INTRO_PAGES.length - 1) { page++; start(); } else close(); }
+  function onKey(e) { if (e.key === 'Escape') close(); else if (e.key === 'Enter' || e.key === ' ') { if (document.activeElement && document.activeElement.dataset.i === 'skip') return; e.preventDefault(); advance(); } }
+  el.addEventListener('click', (e) => { const t = e.target.closest('[data-i]'); if (t && t.dataset.i === 'skip') return close(); advance(); });
+  document.addEventListener('keydown', onKey);
+  btn.focus(); start();
+}
+
 fetch('/api/config').then((r) => r.json()).then((c) => { cfg = c; if (state) render(); }).catch(() => {});
-if (session) poll(true).then(() => { if (!state) render(); }); else render();
+if (session) poll(true).then(() => { if (!state) render(); }); else { render(); if (!store.get(INTRO_KEY)) showIntro(); }
