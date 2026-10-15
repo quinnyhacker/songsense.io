@@ -78,6 +78,13 @@ You register the domain yourself (any registrar: Namecheap, Porkbun, Cloudflare,
 * Opening the game to the public with search enabled needs Spotify's extended-access review. Until then, search works for allowlisted accounts and everyone else can paste links.
 * Never paste API keys into chat, issues or code. If a key was ever exposed, rotate it in the Spotify developer dashboard.
 
+## Shared listening
+
+Songs are added by **search** (paste-a-link only appears as a fallback when the server has no Spotify keys). The picker's Spotify player is the remote control: its play, pause and seek are reported to the server (`POST /api/playback`), and every player who clicks **Listen along** has their own Spotify player follow it (same position, adjusted for elapsed time, re-synced if it drifts more than 2.5 s). Listening along is opt-in per person, so each listener's playback starts from their own click.
+
+* Each player runs inside `/player.html`, a tiny page framed by the game that hosts Spotify's official embed through Spotify's iFrame API. That API needs `unsafe-eval`, so `player.html` gets its own strict-as-possible CSP while the main app keeps `script-src 'self'`. The frame is same-origin (the Spotify embed cannot render in a fully sandboxed frame), so treat Spotify's script as trusted.
+* Limits you can't remove from our side: listeners who are not signed in to Spotify in their browser get 30-second previews, so a position past 30 s is silent for them; sync accuracy is about one second (state is polled every 0.6 s); browsers may block remote-started audio until the page has had a click, which is why "Listen along" is a button.
+
 ## Privacy
 
 No accounts, ads, analytics or tracking cookies. Display names, guesses and chat exist only in server memory for the life of a game (rooms are deleted a few hours after the last activity or on restart). The browser stores a random player ID and name in `localStorage` for reconnecting. Spotify's embed may set its own cookies. The full text is in the app (Privacy link on the home page). If you collect any of this data beyond the above, update the notice.

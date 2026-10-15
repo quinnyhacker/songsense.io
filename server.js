@@ -42,7 +42,7 @@ function newCode() {
 }
 
 /* ---------- rate limits (per client IP) ---------- */
-const limits = { avatar: limiter(60, 60000), global: limiter(2400, 60000), create: limiter(20, 600000), join: limiter(60, 600000), search: limiter(60, 60000), song: limiter(40, 60000), guess: limiter(240, 60000) };
+const limits = { avatar: limiter(60, 60000), global: limiter(2400, 60000), create: limiter(20, 600000), join: limiter(60, 600000), search: limiter(60, 60000), song: limiter(40, 60000), playback: limiter(240, 60000), guess: limiter(240, 60000) };
 const clientIp = (req) => (TRUST_PROXY && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || 'unknown';
 function limit(name, req) { const r = limits[name](clientIp(req)); if (!r.ok) { const e = httpErr(429, `You're doing that a lot. Try again in ${r.retry}s.`); e.retry = r.retry; throw e; } }
 
@@ -105,6 +105,7 @@ function viewFor(room, pid) {
     out.word = known ? room.word.word : null;
     out.mask = mask(room.word.word); out.category = room.word.category;
   }
+  if (room.phase === 'playing' || room.phase === 'roundend') out.play = room.play;
   if (room.phase === 'roundend') out.result = room.result;
   if (room.phase === 'gameover') out.final = room.final;
   const guessedOrPicker = isPicker || !!room.guessed[pid];
@@ -124,7 +125,7 @@ function startNextRound(room) {
   if (!room.queue.length || Object.keys(room.players).length < MIN_PLAYERS) return finishGame(room);
   room.pickerId = room.queue.shift(); room.round++;
   const fresh = pool(room).filter((w) => !room.usedWords.has(w.word)); const src = fresh.length >= 3 ? fresh : pool(room);
-  room.options = shuffle(src).slice(0, 3); room.word = null; room.songs = []; room.guessed = {}; room.gains = {}; room.firstSongAt = null; room.result = null;
+  room.options = shuffle(src).slice(0, 3); room.word = null; room.songs = []; room.guessed = {}; room.gains = {}; room.firstSongAt = null; room.result = null; room.play = null;
   room.phase = 'choosing'; setClock(room, T(CHOOSE_MS));
   say(room, 'sys', `Round ${room.round}: ${room.players[room.pickerId].name} is picking a word.`);
   touch(room);
@@ -193,7 +194,7 @@ const routes = {
     const code = newCode(), pid = rid(8);
     rooms.set(code, { code, v: 1, updated: Date.now(), active: Date.now(), hostId: pid, phase: 'lobby', round: 0, queue: [], settings: { cats: ['emotions', 'adjectives', 'scenarios'], secs: 90, cycles: 1 },
       players: { [pid]: { name, avatar: cleanAvatar(b.avatar), ready: true, score: 0, lastSeen: Date.now(), joinedAt: Date.now() } }, pickerId: null, options: [], word: null, songs: [], guessed: {}, gains: {}, usedWords: new Set(),
-      deadline: null, firstSongAt: null, result: null, final: null, chat: [], chatSeq: 0 });
+      deadline: null, firstSongAt: null, play: null, result: null, final: null, chat: [], chatSeq: 0 });
     return { code, pid };
   },
   'POST /api/join': async (b, req) => {
@@ -247,6 +248,7 @@ const routes = {
     if (room.phase !== 'playing') throw httpErr(400, 'You can add songs once you\'ve picked a word.');
     if (b.pid !== room.pickerId) throw httpErr(403, 'Only the picker adds songs.');
     if (room.songs.length >= MAX_SONGS) throw httpErr(400, 'You\'ve already used all three songs.');
+    if (HAS_SEARCH && b.url) throw httpErr(400, 'Search for a song to add it.');          // with search on, songs come from search results only
     const id = parseTrackId(b.url || ('spotify:track:' + b.trackId));
     if (!id) throw httpErr(400, 'That doesn\'t look like a Spotify song link. In Spotify choose ••• › Share › Copy Song Link.');
     if (room.songs.some((s) => s.trackId === id)) throw httpErr(400, 'You already added that song.');
@@ -259,6 +261,17 @@ const routes = {
       say(room, 'sys', 'First song is in. Type your guesses!');
     } else say(room, 'sys', `Song ${room.songs.length} added.`);
     touch(room); return { ok: true, count: room.songs.length };
+  },
+  // Shared playback: only the picker's player reports play/pause/seek; every listener who opted in follows this state.
+  'POST /api/playback': async (b, req) => {
+    limit('playback', req);
+    const room = getRoom(b.code, b.pid);
+    if (room.phase !== 'playing') throw httpErr(400, 'No round is playing.');
+    if (b.pid !== room.pickerId) throw httpErr(403, 'Only the picker controls playback.');
+    const n = Number(b.n), pos = Number(b.pos);
+    if (!Number.isInteger(n) || n < 1 || n > room.songs.length) throw httpErr(400, 'Unknown song.');
+    if (!Number.isFinite(pos) || pos < 0 || pos > 3600000) throw httpErr(400, 'Bad position.');
+    room.play = { n, playing: b.playing === true, pos: Math.round(pos), at: Date.now() }; touch(room); return { ok: true };
   },
   'POST /api/guess': async (b, req) => {
     limit('guess', req);
@@ -337,7 +350,13 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' https: data:; frame-src https://open.spotify.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' https: data:; frame-src 'self' https://open.spotify.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+  const pth = req.url.split('?')[0];
+  if (pth === '/player.html' || pth === '/player.js') {      // isolated host for Spotify's iFrame API (it needs eval); runs sandboxed with no access to the app
+    const f = pth === '/player.js' ? ['player.js', 'text/javascript; charset=utf-8'] : ['player.html', 'text/html; charset=utf-8'];
+    res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self' 'unsafe-eval' https://open.spotify.com https://*.spotifycdn.com; frame-src https://open.spotify.com; style-src 'unsafe-inline'; img-src https: data:; connect-src https:; base-uri 'none'; frame-ancestors 'self'");
+    return fs.readFile(path.join(PUBLIC, f[0]), (err, data) => { if (err) { res.writeHead(404); return res.end('Not found'); } res.writeHead(200, { 'Content-Type': f[1], 'Cache-Control': 'no-cache' }); res.end(data); });
+  }
   if (req.url === '/healthz') { res.writeHead(200); return res.end('ok'); }
   if (req.url.startsWith('/api/')) {
     try {

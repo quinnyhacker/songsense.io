@@ -22,7 +22,7 @@ const inviteCode = (new URLSearchParams(location.search).get('join') || '').toUp
 if (inviteCode.length === 4 && session && session.code !== inviteCode) { session = null; store.del('songsense.session'); }   // a new invite link wins over an old game
 
 let state = null, cfg = { search: false, categories: {}, secs: [60, 90, 120], maxCycles: 3, minPlayers: 2 }, clockOffset = 0;
-const ui = { err: '', notice: '', name: store.get('songsense.name') || '', code: inviteCode, invite: inviteCode.length === 4 ? { code: inviteCode, status: 'checking' } : null,
+const ui = { listen: false, err: '', notice: '', name: store.get('songsense.name') || '', code: inviteCode, invite: inviteCode.length === 4 ? { code: inviteCode, status: 'checking' } : null,
   sq: '', hits: null, searching: false, link: '', leaveArmed: false };
 const last = {}; const locks = new Set(); let fails = 0, inRoom = false;
 
@@ -58,7 +58,7 @@ async function poll(force) {
     if (e.network || e.status >= 500) { fails++; if (fails >= 2) setNet(false); }
   }
 }
-setInterval(() => poll(false), 1000);
+(function loop() { poll(false).finally(() => setTimeout(loop, state && state.phase === 'playing' ? 600 : 1200)); })();   // faster while a round is playing so shared playback stays tight
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(true); });
 window.addEventListener('online', () => poll(true));
 
@@ -164,7 +164,7 @@ function shell() {
     <div class="room"><div class="col" id="colmain">
       ${win('hero', '', '<section id="hero" class="win-body hero" aria-live="polite"></section>')}
       <div class="win" id="mainwin"><div class="tb"><span class="ttl" id="t-main"></span>${winCtl()}</div><section id="main" class="win-body"></section></div>
-      <div class="win" id="songswin" hidden><div class="tb"><span class="ttl">${icon('music')} Song hints</span>${winCtl()}</div><section id="songs" class="win-body"><div class="songs" id="songlist"></div><div class="songs" id="slots" style="margin-top:12px"></div></section></div></div>
+      <div class="win" id="songswin" hidden><div class="tb"><span class="ttl">${icon('music')} Song hints</span>${winCtl()}</div><section id="songs" class="win-body"><div class="listenbar" id="listenbar" hidden></div><div class="songs" id="songlist"></div><div class="songs" id="slots" style="margin-top:12px"></div></section></div></div>
     <div class="col side"><div class="win" id="playerswin"><div class="tb"><span class="ttl">Players</span>${winCtl()}</div><section id="players" class="win-body"></section></div>
       <div class="win chat" id="chatcard"><div class="tb"><span class="ttl">${icon('send')} Chat &amp; guesses</span>${winCtl()}</div><div id="chatlog" class="chatlog" role="log" aria-live="polite" aria-label="Game chat" tabindex="0"></div>
       <form id="chatform" class="chatform" autocomplete="off"><label class="sr" for="chatin" id="chatlbl">Message</label><input id="chatin" maxlength="80" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Say something&hellip;"><button class="btn sm primary" aria-label="Send">${icon('send')}</button></form></div></div></div></div>`;
@@ -255,8 +255,8 @@ function pickerControls() {
   const q = ui.sq;
   const hits = ui.hits ? (ui.hits.length ? `<ul class="hits" aria-label="Search results">${ui.hits.map((h, i) => `<li class="hit">${h.thumb ? `<img src="${esc(h.thumb)}" alt="" loading="lazy">` : `<span class="art"></span>`}<span class="meta"><b>${esc(h.title)}</b><span>${esc(h.artist)}</span></span>
       <button class="btn sm primary" data-act="addhit" data-i="${i}" aria-label="Add ${esc(h.title)}">${icon('plus')}Add</button></li>`).join('')}</ul>` : '<p class="hint" style="margin-top:12px">No songs found. Try different words.</p>') : '';
-  const paste = `<details class="paste" ${cfg.search ? '' : 'open'}><summary>${cfg.search ? 'Or paste a Spotify song link' : 'Paste a Spotify song link'}</summary><form data-form="link" class="field"><label class="sr" for="lk">Spotify song link</label><input id="lk" name="link" placeholder="https://open.spotify.com/track/&hellip;" value="${esc(ui.link)}" autocomplete="off"><button class="btn primary">Add</button></form>
-    ${cfg.search ? '' : '<p class="hint" style="margin-top:8px">In Spotify: ••• › Share › Copy Song Link.</p>'}</details>`;
+  const paste = cfg.search ? '' : `<details class="paste" open><summary>Paste a Spotify song link</summary><form data-form="link" class="field"><label class="sr" for="lk">Spotify song link</label><input id="lk" name="link" placeholder="https://open.spotify.com/track/&hellip;" value="${esc(ui.link)}" autocomplete="off"><button class="btn primary">Add</button></form>
+    <p class="hint" style="margin-top:8px">Song search isn't set up on this server (no Spotify keys), so links are accepted instead.</p></details>`;
   const searchForm = cfg.search ? `<form data-form="search" class="field"><label class="sr" for="sq">Search Spotify</label><input id="sq" name="q" placeholder="Search a song or artist" value="${esc(q)}" autocomplete="off" enterkeyhint="search"><button class="btn" ${ui.searching ? 'disabled' : ''}>${icon('search')}<span>${ui.searching ? 'Searching&hellip;' : 'Search'}</span></button></form>` : '';
   return `<div class="card"><p class="label">${n ? `Add another hint &middot; song ${n + 1} of 3` : 'Add your first song &middot; song 1 of 3'}</p><p class="hint" style="margin:4px 0 12px">${n ? 'Optional. Later songs are easier but worth fewer points to guessers.' : 'Choose a song that makes people feel your word. Everyone else will see it.'}</p>
     ${searchForm}${hits}${paste}<p class="err" id="err" role="alert">${esc(ui.err)}</p></div>`;
@@ -290,8 +290,20 @@ function syncSongs() {
     const t = splitTitle(w.title), d = document.createElement('div'); d.className = 'wmp enter'; d.dataset.id = w.trackId;
     d.innerHTML = `<div class="wmp-top">${w.thumb ? `<img class="art" src="${esc(w.thumb)}" alt="Album art" referrerpolicy="no-referrer">` : `<span class="art">${icon('music')}</span>`}
         <div class="meta"><span class="n">Hint song ${w.n} of ${s.maxSongs}</span><b>${esc(t.title)}</b><span class="a">${esc(t.artist)}</span></div></div>
-      <div class="embedhost"><iframe src="${embedSrc(w.trackId)}" allow="encrypted-media; clipboard-write" loading="lazy" title="Spotify player for song ${w.n}"></iframe></div>`;
+      <div class="wmp-bar"><span class="sync">Paused</span><div class="seek" role="progressbar" aria-label="Song progress"><i></i></div><span class="time">0:00 / 0:30</span></div>
+      <div class="embedhost"><iframe class="pframe" src="/player.html?id=${encodeURIComponent(w.trackId)}" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms" allow="autoplay; encrypted-media; clipboard-write" loading="lazy" title="Spotify player for song ${w.n}"></iframe></div>`;
+    d.dataset.n = w.n; d._p = { ready: false, paused: true, pos: 0, dur: 0, seen: 0 };
     list.appendChild(d);
+  }
+  const lb = document.getElementById('listenbar');
+  if (lb) {
+    const mode = s.songs.length ? (s.me.isPicker ? 'p' : ui.listen ? 'on' : 'off') : '';
+    if (last.listen !== mode) {
+      last.listen = mode; lb.hidden = !mode;
+      lb.innerHTML = mode === 'p' ? `<span>${icon('music')} Press play on a song: everyone who joined <b>Listen along</b> hears it at the same moment.</span>`
+        : mode === 'on' ? `<span>${icon('music')} <b>Listening along</b> with ${esc(P(s.pickerId).name)}. Play, pause and seeking follow the picker.</span><button type="button" class="btn sm" data-act="listen">Stop</button>`
+        : `<span>${icon('music')} Hear the songs in sync with ${esc(P(s.pickerId).name)}:</span><button type="button" class="btn go sm" data-act="listen">Listen along</button>`;
+    }
   }
   const need = s.phase === 'playing' ? Array.from({ length: s.maxSongs - s.songs.length }, (_, i) => s.songs.length + i + 1) : [];
   const html = need.map((n, i) => `<div class="slot ${i === 0 ? 'next' : ''}">${icon('music')}<span>${i === 0 ? (s.me.isPicker ? `Song ${n}: add it below${n > 1 ? ' (optional)' : ''}` : `Song ${n}${n === 1 ? ': waiting for the picker&hellip;' : ' may appear later as another hint'}`) : `Song ${n} (optional hint)`}</span></div>`).join('');
@@ -299,6 +311,50 @@ function syncSongs() {
   if (show && s.songs.length) { const t = document.getElementById('songhint'); if (!t) slots.insertAdjacentHTML('beforebegin', '<p class="hint" id="songhint" style="margin-top:8px">Press play on a song. Spotify may play 30-second previews unless you\'re signed in to Spotify in this browser.</p>'); }
   else { const t = document.getElementById('songhint'); if (t) t.remove(); }
 }
+
+/* ---------- shared playback ----------
+   The picker's own Spotify player is the remote control: its play/pause/seek are reported to the server, and every listener who clicked
+   "Listen along" has their player follow that shared state (start position = reported position + time elapsed). Each listener's playback
+   is therefore opted into by their own click. Audio is always Spotify's official player; nothing is streamed or proxied by us. */
+const frameCmd = (d, m) => { const f = d.querySelector('iframe'); if (f && f.contentWindow) f.contentWindow.postMessage(Object.assign({ ss: 1 }, m), '*'); };
+let lastSent = null, sendAt = 0;
+window.addEventListener('message', (ev) => {
+  const m = ev.data; if (!m || m.ss !== 1 || !state) return;
+  const d = [...document.querySelectorAll('.wmp')].find((x) => { const f = x.querySelector('iframe'); return f && f.contentWindow === ev.source; }); if (!d) return;
+  const p = d._p; if (m.t === 'ready') { p.ready = true; return; }
+  if (m.t !== 'update') return;
+  p.paused = m.paused; p.pos = m.position; p.dur = m.duration; p.seen = Date.now(); p.ready = true;
+  d.classList.toggle('playing', !m.paused && !m.buffering);
+  d.querySelector('.seek i').style.width = (m.duration ? Math.min(100, (m.position / m.duration) * 100) : 0) + '%';
+  d.querySelector('.time').textContent = m.duration ? mmss(m.position) + ' / ' + mmss(m.duration) : '0:00';
+  d.querySelector('.sync').textContent = m.buffering ? 'Loading' : m.paused ? 'Paused' : 'Playing';
+  if (state.me.isPicker && state.phase === 'playing') report(d);
+});
+function report(d) {                                           // picker only: publish this player's state
+  const p = d._p, n = Number(d.dataset.n), now = Date.now();
+  const expect = lastSent && lastSent.n === n ? (lastSent.playing ? lastSent.pos + (now - lastSent.at) : lastSent.pos) : -1e9;
+  const playing = !p.paused, changed = !lastSent || lastSent.n !== n || lastSent.playing !== playing || Math.abs(p.pos - expect) > 2500;
+  if (!changed || now - sendAt < 400) return;
+  if (p.paused && (!lastSent || lastSent.n !== n)) return;      // an idle, never-played song is not news
+  sendAt = now; lastSent = { n, playing, pos: p.pos, at: now };
+  api('playback', { n, playing, pos: p.pos }).catch(() => {});
+}
+function follow() {                                            // listeners who opted in: mirror the picker's player
+  if (!state || !ui.listen || state.me.isPicker || state.phase !== 'playing') return;
+  const pl = state.play, now = Date.now();
+  for (const d of document.querySelectorAll('.wmp')) {
+    const p = d._p, n = Number(d.dataset.n); if (!p || !p.ready || now - (d._cmd || 0) < 1500) continue;
+    const here = p.paused ? p.pos : p.pos + (now - p.seen);
+    if (!pl || pl.n !== n) { if (!p.paused) { frameCmd(d, { t: 'pause' }); d._cmd = now; } continue; }
+    const target = pl.playing ? pl.pos + (nowMs() - pl.at) : pl.pos;
+    if (pl.playing) {
+      if (p.dur && target > p.dur) { if (!p.paused) frameCmd(d, { t: 'pause' }); continue; }
+      if (p.paused) { frameCmd(d, { t: 'playAt', sec: target / 1000 }); d._cmd = now; }
+      else if (Math.abs(here - target) > 2500) { frameCmd(d, { t: 'seek', sec: target / 1000 }); d._cmd = now; }
+    } else if (!p.paused) { frameCmd(d, { t: 'pause' }); d._cmd = now; }
+  }
+}
+setInterval(follow, 500);
 
 /* ---------- players ---------- */
 function playersHtml() {
@@ -420,6 +476,7 @@ document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act;
   if (a === 'privacy') return document.getElementById('privacy').showModal();
   if (a === 'avatar') return openCreator();
+  if (a === 'listen') { ui.listen = !ui.listen; last.listen = null; toast(ui.listen ? "Listening along: the picker's play button now plays for you too" : 'Stopped listening along'); if (state) syncSongs(); return; }
   if (a === 'home') { ui.invite = null; ui.code = ''; history.replaceState(null, '', location.pathname); return renderHome(); }
   if (a === 'copyinvite') { const u = inviteUrl(); try { await navigator.clipboard.writeText(u); toast('Invite link copied'); } catch { prompt('Copy this invite link:', u); } return; }
   if (a === 'share') { try { await navigator.share({ title: 'Song Sense', text: 'Join my Song Sense game!', url: inviteUrl() }); } catch { /* cancelled */ } return; }
