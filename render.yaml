@@ -1,0 +1,19 @@
+# Render blueprint. Rooms are held in memory, so keep exactly one instance.
+services:
+  - type: web
+    name: song-sense
+    runtime: node
+    plan: starter            # the free tier sleeps when idle and would wipe running games
+    numInstances: 1
+    buildCommand: npm install --omit=dev     # no dependencies; this just satisfies the build step
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      # Optional Spotify search. Enter these in the Render dashboard (Environment tab), never in this file.
+      # Without them pickers paste a Spotify song link instead.
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
