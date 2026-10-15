@@ -14,7 +14,7 @@ const flairKey = (id) => String(id || '').split(':')[1] || '';
 const frameOf = (p) => flairKey(p.flair && p.flair.frame);
 const nameCls = (p) => (p.flair && p.flair.name ? 'nc-' + flairKey(p.flair.name) : '');
 const titleOf = (p) => { const it = p.flair && p.flair.title && Shop.BY_ID[p.flair.title]; return it ? it.text : ''; };
-const FX_GLYPH = { sparkles: '✦', hearts: '♥', confetti: '■', stars: '★' };
+const FX_GLYPH = { sparkles: '\u2726', hearts: '\u2665', confetti: '\u25A0', stars: '\u2605', sakura: '\u273F', lightning: '\u26A1', fireworks: '\u273A' };
 function fxHtml(kind) {
   const g = FX_GLYPH[kind]; if (!g) return '';
   return `<span class="fx fx-${kind}" aria-hidden="true">${Array.from({ length: 10 }, (_, i) => `<i style="--a:${i * 36}deg;--d:${(i % 5) * 0.07}s">${g}</i>`).join('')}</span>`;
@@ -121,7 +121,7 @@ const SHOP_LINES = {
 };
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 function openShop() {
-  ui.ovKind = 'shop'; ui.shopTab = ui.shopTab || 'hair'; ui.shopSay = pick(SHOP_LINES.hi); ui.confirm = null; renderShop();
+  ui.ovKind = 'shop'; ui.shopTab = ui.shopTab || 'legendary'; ui.shopSay = pick(SHOP_LINES.hi); ui.confirm = null; renderShop();
 }
 function previewFor(it, base) {
   if (it.kind === 'avatar') return `<div class="oth-prev">${avSvg({ ...base, [it.field]: it.value }, base.expr)}</div>`;
@@ -132,7 +132,7 @@ function previewFor(it, base) {
 }
 function renderShop() {
   const u = auth.user, owned = ownedSet(), base = Avatar.normalize((u && u.avatar) || Avatar.fromName(u ? u.username : 'guest')), tab = ui.shopTab;
-  const items = Shop.ITEMS.filter((i) => i.group === tab).sort((a, b) => a.price - b.price);
+  const items = tab === 'legendary' ? Shop.ITEMS.filter((i) => i.price >= 2500).sort((a, b) => b.price - a.price) : Shop.ITEMS.filter((i) => i.group === tab).sort((a, b) => a.price - b.price);
   const tabs = Shop.GROUPS.map(([k, l]) => `<button type="button" class="tab" role="tab" data-ov="stab" data-t="${k}" aria-selected="${tab === k}">${l}</button>`).join('');
   const cards = items.map((it) => {
     const have = owned.has(it.id), afford = u && u.coins >= it.price, tier = Shop.tier(it.price);

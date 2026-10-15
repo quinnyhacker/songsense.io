@@ -24,15 +24,21 @@
   /* face */
   av('eyes', 5, 'face', 'Dot eyes', 150); av('eyes', 2, 'face', 'Sleepy eyes', 200); av('eyes', 4, 'face', 'Cat eyes', 400); av('eyes', 3, 'face', 'Sparkly eyes', 500);
   av('mark', 1, 'face', 'Whiskers', 200); av('mark', 4, 'face', 'Tear mark', 300); av('mark', 2, 'face', 'Star mark', 400); av('mark', 3, 'face', 'Forehead gem', 800);
+  /* legendary costumes and gear */
+  av('clothes', 9, 'clothes', 'Scrubs', 800); av('clothes', 10, 'clothes', 'Lab coat', 1300); av('clothes', 14, 'clothes', 'Wizard robe', 2400); av('clothes', 15, 'clothes', 'Royal robe', 3200);
+  av('clothes', 13, 'clothes', 'Space suit', 4500); av('clothes', 11, 'clothes', 'Knight armor', 5000); av('clothes', 12, 'clothes', 'Shadow vigilante suit', 6000);
+  av('acc', 18, 'hats', 'Scrub cap', 600); av('acc', 24, 'hats', 'Devil horns', 1400); av('acc', 20, 'hats', 'Wizard hat', 2400); av('acc', 22, 'hats', 'Viking helmet', 2800);
+  av('acc', 21, 'hats', 'Astronaut helmet', 3800); av('acc', 17, 'hats', 'Knight helmet', 4000); av('acc', 19, 'hats', 'Shadow cowl', 4500);
+  av('acc', 16, 'gear', 'Stethoscope', 1100); av('acc', 23, 'gear', 'Angel wings', 5500);
   /* profile flair */
-  for (const [k, n, p] of [['pixel', 'Pixel frame', 600], ['gold', 'Gold frame', 800], ['ice', 'Ice frame', 1000], ['neon', 'Neon frame', 1500], ['rainbow', 'Rainbow frame', 2200], ['flame', 'Flame frame', 3500]]) add('frame:' + k, 'frame', 'frames', n, p);
-  for (const [k, n, p] of [['rose', 'Rose name', 300], ['mint', 'Mint name', 300], ['violet', 'Violet name', 500], ['gold', 'Gold name', 900], ['rainbow', 'Rainbow name', 2000]]) add('name:' + k, 'name', 'names', n, p);
-  for (const [k, n, p] of [['rookie', 'Rookie DJ', 150], ['topper', 'Chart Topper', 500], ['collector', 'Vinyl Collector', 700], ['beat', 'Beat Master', 1200], ['wizard', 'Lyric Wizard', 1800], ['legend', 'Mixtape Legend', 4000]]) add('title:' + k, 'title', 'titles', n, p, { text: n });
+  for (const [k, n, p] of [['pixel', 'Pixel frame', 600], ['gold', 'Gold frame', 800], ['ice', 'Ice frame', 1000], ['neon', 'Neon frame', 1500], ['rainbow', 'Rainbow frame', 2200], ['flame', 'Flame frame', 3500], ['royal', 'Royal frame', 4200], ['galaxy', 'Galaxy frame', 6500]]) add('frame:' + k, 'frame', 'frames', n, p);
+  for (const [k, n, p] of [['rose', 'Rose name', 300], ['mint', 'Mint name', 300], ['violet', 'Violet name', 500], ['gold', 'Gold name', 900], ['rainbow', 'Rainbow name', 2000], ['fire', 'Fire name', 3000], ['galaxy', 'Galaxy name', 4000]]) add('name:' + k, 'name', 'names', n, p);
+  for (const [k, n, p] of [['rookie', 'Rookie DJ', 150], ['topper', 'Chart Topper', 500], ['collector', 'Vinyl Collector', 700], ['beat', 'Beat Master', 1200], ['wizard', 'Lyric Wizard', 1800], ['drgroove', 'Dr. Groove', 2500], ['sirbeats', 'Sir Beats-a-Lot', 3000], ['guardian', 'Midnight Guardian', 3500], ['legend', 'Mixtape Legend', 4000], ['cosmic', 'Cosmic DJ', 6000], ['platinum', 'Platinum Legend', 8000]]) add('title:' + k, 'title', 'titles', n, p, { text: n });
   /* reaction effects (shown around your avatar when you guess right) */
-  for (const [k, n, p] of [['sparkles', 'Sparkles', 500], ['hearts', 'Hearts', 700], ['confetti', 'Confetti', 1200], ['stars', 'Shooting stars', 2000]]) add('fx:' + k, 'fx', 'effects', n, p);
+  for (const [k, n, p] of [['sparkles', 'Sparkles', 500], ['hearts', 'Hearts', 700], ['confetti', 'Confetti', 1200], ['stars', 'Shooting stars', 2000], ['sakura', 'Cherry blossoms', 2500], ['lightning', 'Lightning', 3000], ['fireworks', 'Fireworks', 4500]]) add('fx:' + k, 'fx', 'effects', n, p);
 
   const BY_ID = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
-  const tier = (price) => (price >= 2500 ? 'legendary' : price >= 1000 ? 'epic' : price >= 300 ? 'rare' : 'common');
+  const tier = (price) => (price >= 5000 ? 'mythic' : price >= 2500 ? 'legendary' : price >= 1000 ? 'epic' : price >= 300 ? 'rare' : 'common');
   const itemId = (field, value) => field + ':' + value;
   const isFree = (field, value) => !BY_ID[itemId(field, value)];
   // avatar config -> ids of paid items it uses that `owned` (a Set or array) does not contain
@@ -40,7 +46,7 @@
     const have = owned instanceof Set ? owned : new Set(owned || []);
     return Object.keys(cfg || {}).map((f) => itemId(f, cfg[f])).filter((id) => BY_ID[id] && !have.has(id));
   }
-  const GROUPS = [['hair', 'Hair'], ['hats', 'Hats'], ['gear', 'Accessories'], ['clothes', 'Clothes'], ['colors', 'Colors'], ['face', 'Face'], ['frames', 'Frames'], ['names', 'Name colors'], ['titles', 'Titles'], ['effects', 'Effects']];
+  const GROUPS = [['legendary', 'Legendary'], ['hair', 'Hair'], ['hats', 'Hats'], ['gear', 'Accessories'], ['clothes', 'Clothes'], ['colors', 'Colors'], ['face', 'Face'], ['frames', 'Frames'], ['names', 'Name colors'], ['titles', 'Titles'], ['effects', 'Effects']];
   const api = { ITEMS, BY_ID, GROUPS, tier, itemId, isFree, lockedIn, STARTER_COINS: 500, PARTICIPATION_COINS: 50, WIN_BONUS_COINS: 100 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Shop = api;
 })(typeof self !== 'undefined' ? self : this);
