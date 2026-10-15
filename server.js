@@ -377,7 +377,7 @@ const server = http.createServer(async (req, res) => {
 /* background upkeep: round timers, host handover, drop long-gone players, expire idle rooms */
 setInterval(() => {
   const now = Date.now();
-  for (const room of [...rooms.values()]) {
+  for (const room of [...rooms.values()]) try {                // one broken room must never take the whole server (and every other game) down
     if (now - room.active > ROOM_IDLE_MS) { rooms.delete(room.code); continue; }
     for (const [pid, p] of Object.entries(room.players)) if (now - p.lastSeen > PLAYER_DROP_MS) removePlayer(room, pid);
     if (!rooms.has(room.code)) continue;
@@ -385,8 +385,10 @@ setInterval(() => {
     if (host && now - host.lastSeen > HOST_AWAY_MS) { const n = nextHost(room); if (n && n !== room.hostId && isOnline(room.players[n])) { room.hostId = n; touch(room); } }
     tick(room);
     if (room.phase === 'playing') maybeEarlyEnd(room);   // a guesser dropping offline can complete the round
-  }
+  } catch (e) { console.error('[upkeep] room', room.code, e && e.stack || e); }
 }, 250).unref();
+process.on('uncaughtException', (e) => console.error('[uncaughtException]', e && e.stack || e));
+process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e && e.stack || e));
 
 if (require.main === module) server.listen(PORT, () => console.log(`Song Sense running on http://localhost:${PORT}  (Spotify search: ${HAS_SEARCH ? 'on' : 'OFF - set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET'})`));
 module.exports = { server, rooms };
